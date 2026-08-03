@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24" fill="currentColor" role="img" aria-label="카페">
+  <title>카페</title>
+  <path fill-rule="evenodd" d="M6 2h1.4v3.6H6zM10 2h1.4v3.6H10zM13.6 2H15v3.6h-1.4z"/>
+  <path fill-rule="evenodd" d="M3 8h14v6a5 5 0 0 1-5 5H8a5 5 0 0 1-5-5z"/>
+  <path fill-rule="evenodd" d="M17 9.5h1.5a3 3 0 0 1 0 6H17v-1.8h1.5a1.2 1.2 0 0 0 0-2.4H17z"/>
+  <path fill-rule="evenodd" d="M2 20.4h18V22H2z"/>
+</svg>

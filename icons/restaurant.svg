@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24" fill="currentColor" role="img" aria-label="식당">
+  <title>식당</title>
+  <path fill-rule="evenodd" d="M7 2v7a3 3 0 0 0 2.2 2.9V22h1.6V11.9A3 3 0 0 0 13 9V2h-1.5v6.5h-1V2H9v6.5H8V2z"/>
+  <path fill-rule="evenodd" d="M17 2c1.8 1.5 2.6 4.4 2.6 7.4S18.8 15 17 16v6h-1.5V2z"/>
+</svg>

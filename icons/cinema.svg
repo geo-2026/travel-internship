@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24" fill="currentColor" role="img" aria-label="영화">
+  <title>영화</title>
+  <path fill-rule="evenodd" d="M2 3h20v5H2zM5.5 3 3 8h2.5L8 3zM11 3l-2.5 5H11l2.5-5zM16.5 3 14 8h2.5L19 3z"/>
+  <path fill-rule="evenodd" d="M2 9.5h20V20a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2z"/>
+</svg>

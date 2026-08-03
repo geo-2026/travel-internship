@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="color-scheme" content="light">
+  <meta name="description" content="여행지리 수업용 여행 계획 만들기 — 방문지를 지도에 표시하고 PDF로 저장합니다.">
+  <title>Travel Internship</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%231d4ed8'/%3E%3Cpath d='M16 5c-4.4 0-8 3.6-8 8 0 5.6 8 15 8 15s8-9.4 8-15c0-4.4-3.6-8-8-8z' fill='%23fff'/%3E%3Ccircle cx='16' cy='13' r='3.1' fill='%231d4ed8'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/maplibre-gl@5.6.0/dist/maplibre-gl.css">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<!-- ================= 헤더 ================= -->
+<header class="app-header">
+  <div class="app-header__inner">
+    <button type="button" class="hbtn" id="btnPrev" aria-label="이전 단계로">
+      <span aria-hidden="true">←</span><span class="hbtn__t">이전</span>
+    </button>
+
+    <h1 class="logo">Travel Internship</h1>
+
+    <button type="button" class="hbtn hbtn--icon" id="btnSettings" aria-label="설정 열기" aria-haspopup="dialog">
+      <span aria-hidden="true">⚙</span>
+    </button>
+  </div>
+
+  <!-- 스텝 인디케이터 -->
+  <nav class="steps" aria-label="진행 단계">
+    <button type="button" class="step" data-goto="1" aria-current="step">
+      <span class="step__n">1</span><span class="step__t">여행 정보</span>
+    </button>
+    <span class="step__bar" aria-hidden="true"></span>
+    <button type="button" class="step" data-goto="2">
+      <span class="step__n">2</span><span class="step__t">방문지 입력</span>
+    </button>
+    <span class="step__bar" aria-hidden="true"></span>
+    <button type="button" class="step" data-goto="3">
+      <span class="step__n">3</span><span class="step__t">순서 · 저장</span>
+    </button>
+  </nav>
+</header>
+
+<!-- ================= 본문 ================= -->
+<main id="main" class="app-main">
+
+  <!-- ---------- 시작 화면 ---------- -->
+  <section class="page" id="page-intro" hidden>
+    <div class="intro">
+      <p class="intro__eyebrow">여행지리</p>
+      <h2 class="intro__title">여행 계획 만들기</h2>
+      <p class="intro__lead">
+        가고 싶은 도시를 고르고, 숙소·관광 명소·현지 맛집·엑티비티를 지도에 표시한 뒤
+        방문 순서와 비용을 정리해 <b>PDF 한 부</b>로 저장합니다.
+      </p>
+      <ol class="intro__steps">
+        <li><b>1단계</b> 여행 명칭·학번·이름·도시를 입력합니다.</li>
+        <li><b>2단계</b> 방문할 장소를 검색해 지도에 표시합니다.</li>
+        <li><b>3단계</b> 방문 순서를 정하고 PDF로 저장해 제출합니다.</li>
+      </ol>
+      <button type="button" class="btn btn--primary btn--lg" id="btnStart">시작하기</button>
+      <p class="privacy-note">
+        입력한 내용은 사용 중인 기기에만 저장되며 서버로 전송되지 않습니다.
+        로그인이나 키 입력은 필요하지 않습니다.
+      </p>
+    </div>
+  </section>
+
+  <!-- ---------- 1페이지 : 여행 정보 ---------- -->
+  <section class="page" id="page-1" hidden>
+    <h2 class="page__title">1. 여행 정보 입력</h2>
+
+    <div class="field">
+      <label class="field__label" for="inTitle">여행 명칭 <span class="req">필수</span></label>
+      <input class="input" type="text" id="inTitle" maxlength="40" placeholder="예) 나의 오사카 미식 여행"
+             autocomplete="off" enterkeyhint="next">
+      <p class="field__help"><span id="titleCount">0</span>/40자</p>
+      <p class="field__err" id="errTitle" hidden></p>
+    </div>
+
+    <div class="field">
+      <label class="field__label" for="inStudentId">학번 <span class="req">필수</span></label>
+      <input class="input" type="text" id="inStudentId" inputmode="numeric" maxlength="6"
+             placeholder="예) 10105" autocomplete="off" enterkeyhint="next">
+      <p class="field__help">숫자 5자리로 입력하세요.</p>
+      <p class="field__err" id="errStudentId" hidden></p>
+    </div>
+
+    <div class="field">
+      <label class="field__label" for="inStudentName">이름 <span class="req">필수</span></label>
+      <input class="input" type="text" id="inStudentName" maxlength="20" placeholder="예) 홍길동"
+             autocomplete="off" enterkeyhint="next">
+      <p class="field__err" id="errStudentName" hidden></p>
+    </div>
+
+    <div class="field">
+      <label class="field__label" for="inCity">여행할 도시 <span class="req">필수</span></label>
+      <p class="field__help">한글로 입력하면 목록에서 바로 찾습니다. (인터넷 검색을 하지 않습니다)</p>
+      <div class="citybox">
+        <input class="input" type="text" id="inCity" placeholder="예) 오사카" autocomplete="off"
+               role="combobox" aria-expanded="false" aria-controls="cityList" aria-autocomplete="list">
+        <ul class="citylist" id="cityList" role="listbox" hidden></ul>
+      </div>
+      <div class="city-picked" id="cityPicked" hidden>
+        <span class="city-picked__pin" aria-hidden="true">📍</span>
+        <span class="city-picked__name" id="cityPickedName"></span>
+        <button type="button" class="btn btn--ghost btn--sm" id="btnCityReset">변경</button>
+      </div>
+      <p class="field__err" id="errCity" hidden></p>
+      <button type="button" class="linkbtn" id="btnCityManual">목록에 없는 도시인가요? 직접 입력하기</button>
+    </div>
+
+    <p class="privacy-note">
+      입력한 내용은 사용 중인 기기에만 저장되며 서버로 전송되지 않습니다.
+      학번·이름·여행 명칭은 어떤 외부 서비스에도 전송되지 않습니다.
+    </p>
+  </section>
+
+  <!-- ---------- 2페이지 : 지도 + 방문지 ---------- -->
+  <section class="page" id="page-2" hidden>
+    <h2 class="page__title sr-only">2. 지도와 방문지 입력</h2>
+
+    <div class="map-slot" id="mapSlot2"></div>
+
+    <div class="addbar" id="addBar">
+      <button type="button" class="addbtn addbtn--transport" data-add="transport">
+        <span class="addbtn__i" aria-hidden="true">🚌</span>이동방법
+      </button>
+      <button type="button" class="addbtn" data-add="stay" style="--c:#2563eb">
+        + 숙소 <span class="badge" id="badge-stay" hidden>0</span>
+      </button>
+      <button type="button" class="addbtn" data-add="sight" style="--c:#16a34a">
+        + 관광명소 <span class="badge" id="badge-sight" hidden>0</span>
+      </button>
+      <button type="button" class="addbtn" data-add="food" style="--c:#ea580c">
+        + 맛집 <span class="badge" id="badge-food" hidden>0</span>
+      </button>
+      <button type="button" class="addbtn" data-add="activity" style="--c:#7c3aed">
+        + 엑티비티 <span class="badge" id="badge-activity" hidden>0</span>
+      </button>
+    </div>
+
+    <p class="limit-note" id="limitNote">
+      방문지 <b id="placeCount">0</b> / <b id="placeMax">20</b>개<span id="limitWarn"></span>
+    </p>
+
+    <div class="cards" id="cardList"></div>
+
+    <p class="empty-hint" id="emptyHint">
+      위 버튼을 눌러 방문할 장소를 추가하세요.<br>
+      검색이 잘 안 되면 <b>지도에서 직접 위치 지정</b>을 사용할 수 있습니다.
+    </p>
+  </section>
+
+  <!-- ---------- 3페이지 : 순서 · 비용 · 경로 ---------- -->
+  <section class="page" id="page-3" hidden>
+    <h2 class="page__title sr-only">3. 방문 순서와 저장</h2>
+
+    <div class="map-slot" id="mapSlot3"></div>
+
+    <p class="route-note" id="routeNote" hidden></p>
+
+    <dl class="summary">
+      <div class="summary__row" id="rowFlight">
+        <dt>왕복 항공료</dt><dd id="sumFlight">0원</dd>
+      </div>
+      <div class="summary__row">
+        <dt>총 이용 비용 <small>(항공료 제외)</small></dt><dd id="sumTotal">0원</dd>
+      </div>
+      <div class="summary__row">
+        <dt>총 이동 거리 · 시간</dt><dd id="sumRoute">-</dd>
+      </div>
+    </dl>
+
+    <h3 class="subhead">방문 순서</h3>
+    <p class="field__help">카드를 끌어서 옮기거나, 오른쪽 순서 번호를 골라 바꿀 수 있습니다.</p>
+    <ol class="order" id="orderList"></ol>
+
+    <p class="empty-hint" id="orderEmptyHint" hidden>
+      2단계에서 방문지를 먼저 추가해 주세요.
+    </p>
+
+    <div class="save-area">
+      <button type="button" class="btn btn--primary btn--lg" id="btnApplyPdf">적용 · PDF 저장</button>
+      <p class="field__help" id="pdfHint">PDF는 이 기기에 바로 내려받습니다.</p>
+    </div>
+  </section>
+
+</main>
+
+<!-- ================= 하단 고정 바 ================= -->
+<footer class="app-foot">
+  <div class="attribution" id="attribution">
+    지도 데이터 © MapTiler © OpenStreetMap contributors · 경로 © openrouteservice
+  </div>
+  <button type="button" class="btn btn--primary btn--next" id="btnNext">다음 →</button>
+</footer>
+
+<!-- ================= 지도 (앱 전체에서 단 1개, 슬롯 사이를 이동) ================= -->
+<div class="map-host" id="mapHost" hidden>
+  <div class="map" id="map" role="application" aria-label="여행 지도"></div>
+
+  <div class="map-overlay" id="mapOverlay" hidden>
+    <div class="map-overlay__box">
+      <p class="map-overlay__title">지도 키가 설정되지 않았습니다</p>
+      <p class="map-overlay__desc">
+        교사용 <code>config.js</code> 의 <code>MAPTILER_KEY</code> 를 입력하면 지도가 표시됩니다.<br>
+        지금은 <b>데모 모드</b>로, 지도 없이 나머지 기능을 확인할 수 있습니다.
+      </p>
+    </div>
+  </div>
+
+  <div class="map-pickbar" id="mapPickBar" hidden>
+    <span class="map-pickbar__t">지도를 눌러 위치를 지정하세요</span>
+    <button type="button" class="btn btn--sm" id="btnPickCancel">취소</button>
+    <button type="button" class="btn btn--primary btn--sm" id="btnPickConfirm" disabled>이 위치로 지정</button>
+  </div>
+
+  <button type="button" class="legend-toggle" id="legendToggle" aria-expanded="true"
+          aria-controls="legend">범례</button>
+  <div class="legend" id="legend"></div>
+</div>
+
+<!-- ================= 모달 컨테이너 ================= -->
+<div class="modal-root" id="modalRoot" hidden></div>
+
+<!-- ================= 토스트 ================= -->
+<div class="toast-root" id="toastRoot" aria-live="polite" aria-atomic="true"></div>
+
+<!-- ================= 진행 오버레이 ================= -->
+<div class="busy" id="busy" hidden>
+  <div class="busy__box">
+    <div class="busy__spin" aria-hidden="true"></div>
+    <p class="busy__t" id="busyText">준비 중…</p>
+  </div>
+</div>
+
+<script type="module" src="js/app.js"></script>
+<noscript>
+  <p style="padding:24px;font-family:sans-serif">이 앱을 사용하려면 자바스크립트를 켜 주세요.</p>
+</noscript>
+</body>
+</html>

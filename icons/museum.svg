@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24" fill="currentColor" role="img" aria-label="박물관">
+  <title>박물관</title>
+  <path fill-rule="evenodd" d="M12 2 2 8v2h20V8z"/>
+  <path fill-rule="evenodd" d="M4 11h3v7H4zM10.5 11h3v7h-3zM17 11h3v7h-3z"/>
+  <path fill-rule="evenodd" d="M2 19h20v3H2z"/>
+</svg>
