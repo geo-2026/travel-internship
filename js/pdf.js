@@ -77,12 +77,20 @@ function ensureFont(doc) {
    폰트에 들어 있는 글자만 남깁니다
    (한자·이모지 등은 서브셋에 없어 빈칸으로 나오므로 미리 걸러냅니다)
    -------------------------------------------------------------------- */
+// ★ 이 목록은 fonts/NotoSansKR-Regular.js 의 cmap 을 실제로 읽어 맞춘 값입니다.
+//   글자가 있다고 잘못 적으면 그 글자가 PDF 에 빈 네모로 찍힙니다.
+//   폰트를 다시 만들었다면 README 7절의 확인 절차로 이 표를 다시 맞추세요.
 const RANGES = [
-  [0x0020, 0x007e], [0x00a0, 0x00ff], [0x2010, 0x201f], [0x2022, 0x2022],
-  [0x2026, 0x2026], [0x203b, 0x203b], [0x20a9, 0x20a9], [0x20ac, 0x20ac],
-  [0x2190, 0x2193], [0x2460, 0x2473], [0x24ea, 0x24ea], [0x25a0, 0x25cf],
-  [0x2605, 0x2606], [0x3000, 0x303f], [0x3040, 0x30ff], [0x3131, 0x318e],
-  [0xac00, 0xd7a3], [0xff01, 0xff5e], [0xffe6, 0xffe6]
+  [0x0020, 0x007e], [0x00a0, 0x00ff],
+  [0x2010, 0x2016], [0x2018, 0x201a], [0x201c, 0x201e],
+  [0x2022, 0x2022], [0x2026, 0x2026], [0x203b, 0x203b],
+  [0x20a9, 0x20a9], [0x20ac, 0x20ac], [0x2190, 0x2193],
+  [0x2460, 0x2473], [0x24ea, 0x24ea],
+  [0x25a0, 0x25ab], [0x25b1, 0x25b3], [0x25b6, 0x25b7], [0x25bc, 0x25bd],
+  [0x25c0, 0x25c1], [0x25c6, 0x25c7], [0x25c9, 0x25cc], [0x25ce, 0x25cf],
+  [0x2605, 0x2606], [0x3000, 0x303f],
+  [0x3041, 0x3096], [0x3099, 0x30ff],
+  [0x3131, 0x318e], [0xac00, 0xd7a3], [0xff01, 0xff5e], [0xffe6, 0xffe6]
 ];
 
 function inFont(cp) {
@@ -90,13 +98,38 @@ function inFont(cp) {
   return false;
 }
 
-/** 폰트에 없는 글자를 지웁니다. 남는 글자가 없으면 빈 문자열. */
+/**
+ * NFD 로 분해되지 않아 발음기호만 떼어낼 수 없는 라틴 확장 글자들.
+ * (ø·æ·ß 등 라틴-1 보충 영역 글자는 서브셋에 들어 있어 그대로 나옵니다)
+ */
+const FOLD = {
+  "Ł": "L", "ł": "l", "Đ": "D", "đ": "d", "Ħ": "H", "ħ": "h",
+  "Ŧ": "T", "ŧ": "t", "Œ": "OE", "œ": "oe", "ı": "i", "ĸ": "k",
+  "ſ": "s", "ŉ": "n", "Ə": "E", "ə": "e"
+};
+
+/**
+ * 폰트에 없는 라틴 글자를 기본 알파벳으로 바꿉니다. (ū→u, ō→o, ș→s)
+ * 일본·유럽 지명의 로마자 표기에 자주 나오므로, 그냥 지우면
+ * "Chūō Ward" 가 "Ch Ward" 로 찍힙니다.
+ * ★ 한글 음절은 이미 폰트에 있어 이 함수까지 오지 않습니다.
+ *   (오면 NFD 가 자모로 분해해 버리므로 반드시 inFont 검사를 먼저 할 것)
+ */
+function foldLatin(ch) {
+  if (FOLD[ch]) return FOLD[ch];
+  const d = ch.normalize("NFD").replace(/[̀-ͯ]/g, "");   // 결합 발음기호 제거
+  return d === ch ? "" : d;
+}
+
+/** 폰트에 없는 글자를 대체하거나 지웁니다. 남는 글자가 없으면 빈 문자열. */
 export function pdfSafe(s) {
   const str = String(s == null ? "" : s);
   let out = "";
   for (const ch of str) {
-    const cp = ch.codePointAt(0);
-    if (inFont(cp)) out += ch;
+    if (inFont(ch.codePointAt(0))) { out += ch; continue; }
+    for (const f of foldLatin(ch)) {
+      if (inFont(f.codePointAt(0))) out += f;
+    }
   }
   return out.replace(/\s+/g, " ").trim();
 }
