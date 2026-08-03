@@ -12,6 +12,16 @@
 - 경로 : **OpenRouteService(ORS)** Directions
 - 데이터 : **전량 학생 기기의 localStorage.** 서버·DB·전송 없음
 
+## 학생용 주소
+
+<https://geo-2026.github.io/travel-internship/>
+
+<img src="qr.png" alt="학생용 접속 QR 코드" width="200">
+
+> ⚠ **현재는 초기 점검용 배포입니다.** MapTiler 키를 아직 넣지 않아 **데모 모드**로 동작합니다
+> (지도 배경 타일만 없고 마커·경로·PDF 등 나머지는 모두 정상). 1절의 키 발급을 마치면
+> `config.js` 한 줄 교체로 실제 지도가 나옵니다. **학생에게 배포하기 전에 키를 먼저 넣으세요.**
+
 ---
 
 ## 1. 교사 준비 (처음 한 번, 약 15분)
@@ -21,7 +31,7 @@
 1. <https://www.maptiler.com/> 가입 → **Keys** → **New key** (이름 예: `travel-internship-class`)
 2. 그 키의 **Allowed origins** 에 배포 주소만 등록합니다.
    ```
-   https://<교사계정>.github.io/*
+   https://geo-2026.github.io/*
    ```
    → 키가 노출되어도 다른 사이트에서는 쓸 수 없습니다. **이 앱의 핵심 방어선입니다.**
 3. `config.js` 를 열어 한 줄만 바꿉니다.
@@ -94,17 +104,36 @@ Photon 은 OpenStreetMap 을 색인하기 때문에 **한국어 질의에 약합
 
 ## 2. 배포 (GitHub Pages)
 
-1. GitHub 에 **`travel-internship`** 이름으로 저장소를 만듭니다.
-2. 이 폴더의 내용을 전부 올립니다. (`.nojekyll` 파일도 반드시 포함)
-3. Settings → Pages → Source: **main 브랜치 / (root)**
-4. 몇 분 뒤 아래 주소가 열립니다.
-   ```
-   https://<교사계정>.github.io/travel-internship/
-   ```
-5. 이 주소로 QR 코드를 만들어 학생에게 배포합니다.
+**이미 배포되어 있습니다.**
+
+| 항목 | 값 |
+|---|---|
+| 저장소 | <https://github.com/geo-2026/travel-internship> (공개) |
+| 학생용 주소 | <https://geo-2026.github.io/travel-internship/> |
+| 설정 | `main` 브랜치 `/ (root)`, `.nojekyll` 포함 |
+| QR 코드 | 저장소의 `qr.png` (위 주소로 연결됨) |
+
+### 내용을 고친 뒤 반영하기
+
+파일을 수정했다면 아래 세 줄이면 1~2분 안에 배포 주소에 반영됩니다.
+
+```bash
+cd travel-internship
+git add -A
+git commit -m "설명"
+git push
+```
 
 > **저장소명과 브랜치명은 학기 중에 바꾸지 마세요.**
 > 링크가 끊기면 안내 자료를 전부 다시 배포해야 합니다.
+
+### 처음부터 다른 계정에 배포하려면
+
+1. GitHub 에 **`travel-internship`** 이름으로 저장소를 만듭니다.
+2. 이 폴더의 내용을 전부 올립니다. (`.nojekyll` 파일도 반드시 포함)
+3. Settings → Pages → Source: **main 브랜치 / (root)**
+4. 몇 분 뒤 `https://<교사계정>.github.io/travel-internship/` 가 열립니다.
+5. MapTiler 키의 **Allowed origins** 를 새 주소로 바꾸고, `qr.png` 도 새로 만듭니다.
 
 ### 로컬에서 먼저 확인하려면
 
@@ -197,6 +226,7 @@ travel-internship/
 ├─ data/aliases.json             ← 한글→영문 장소명 사전
 ├─ icons/*.svg                   ← 아이콘 원본 38종
 ├─ fonts/NotoSansKR-Regular.js   ← PDF용 한글 폰트 (base64)
+├─ qr.png                        ← 학생 배포용 QR (배포 주소로 연결)
 ├─ .nojekyll
 └─ README.md
 ```
@@ -239,8 +269,24 @@ pyftsubset NotoSansKR-400.ttf \
 ```
 
 > **한자(漢字)는 서브셋에 없습니다.** 파일 크기 때문입니다.
-> 검색 결과 원문이 `大阪城` 처럼 한자면 PDF 에서는 그 줄이 자동으로 생략됩니다(빈 네모가 찍히지 않습니다).
+> 검색 결과 원문이 `大阪城` 처럼 한자면 PDF 에서는 그 글자가 자동으로 빠집니다(빈 네모가 찍히지 않습니다).
 > 화면에서는 기기 글꼴로 정상 표시됩니다.
+> 발음기호가 붙은 라틴 글자(`Chūō`, `Łódź`)는 지우지 않고 기본 알파벳(`Chuo`, `Lodz`)으로 바꿔 찍습니다.
+
+#### ★ 폰트를 다시 만들었다면 반드시 확인할 것
+
+`js/pdf.js` 의 `RANGES` 는 **폰트에 실제로 들어 있는 글자 목록**입니다.
+서브셋 명령의 `--unicodes` 와 결과 폰트는 일치하지 않을 수 있습니다
+(요청한 범위 안에 원본 폰트에 없는 글자가 섞여 있으면 그대로 빠집니다).
+`RANGES` 에 없는 글자를 적어 두면 그 글자가 **PDF 에 빈 네모로 찍힙니다.**
+폰트를 새로 만든 뒤에는 아래로 대조해 `RANGES` 를 고치세요.
+
+```bash
+pyftsubset ... --output-file=NotoSansKR-subset.ttf
+python -c "from fontTools.ttLib import TTFont; f=TTFont('NotoSansKR-subset.ttf'); \
+cps=sorted(f.getBestCmap()); print(len(cps)); \
+print([hex(c) for c in cps if c < 0xAC00])"
+```
 
 ---
 
