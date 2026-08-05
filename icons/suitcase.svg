@@ -1,5 +1,7 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24" fill="currentColor" role="img" aria-label="여행가방">
-  <title>여행가방</title>
-  <path fill-rule="evenodd" d="M9 3h6a2 2 0 0 1 2 2v2h-2V5H9v2H7V5a2 2 0 0 1 2-2z"/>
-  <path fill-rule="evenodd" d="M4 8h16a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2v-9a2 2 0 0 1 2-2z"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 32" width="24" height="32" role="img" aria-label="suitcase">
+  <path d="M12 1.2C6.62 1.2 2.26 5.56 2.26 10.94c0 6.9 8.32 18.5 8.68 18.99a1.32 1.32 0 0 0 2.12 0c.36-.49 8.68-12.09 8.68-18.99C21.74 5.56 17.38 1.2 12 1.2z" fill="currentColor" stroke="#ffffff" stroke-width="1.6" stroke-linejoin="round"/>
+  <g fill="#ffffff" transform="translate(6 5)">
+      <path d="M4.1 3.5V2.3A1.3 1.3 0 0 1 5.4 1h1.2a1.3 1.3 0 0 1 1.3 1.3v1.2H6.7V2.2H5.3v1.3z"/>
+      <path fill-rule="evenodd" d="M.6 4.1h10.8v6.7H.6zm4.7 1.5v3.7h1.4V5.6z"/>
+  </g>
 </svg>

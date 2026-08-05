@@ -1,4 +1,6 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24" fill="currentColor" role="img" aria-label="피자">
-  <title>피자</title>
-  <path fill-rule="evenodd" d="M12 2 3 19.5c5.6 2.6 12.4 2.6 18 0zM9.2 13.2a1.3 1.3 0 1 0 2.6 0 1.3 1.3 0 1 0-2.6 0zM14 11.5a1.3 1.3 0 1 0 2.6 0 1.3 1.3 0 1 0-2.6 0zM11 17a1.3 1.3 0 1 0 2.6 0 1.3 1.3 0 1 0-2.6 0z"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 32" width="24" height="32" role="img" aria-label="pizza">
+  <path d="M12 1.2C6.62 1.2 2.26 5.56 2.26 10.94c0 6.9 8.32 18.5 8.68 18.99a1.32 1.32 0 0 0 2.12 0c.36-.49 8.68-12.09 8.68-18.99C21.74 5.56 17.38 1.2 12 1.2z" fill="currentColor" stroke="#ffffff" stroke-width="1.6" stroke-linejoin="round"/>
+  <g fill="#ffffff" transform="translate(6 5)">
+      <path fill-rule="evenodd" d="M6 .4 11.7 11.6H.3zM5.1 4.5a1 1 0 1 0 0 2 1 1 0 0 0 0-2zm2.4 3a1 1 0 1 0 0 2 1 1 0 0 0 0-2z"/>
+  </g>
 </svg>

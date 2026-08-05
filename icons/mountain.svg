@@ -1,4 +1,7 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24" fill="currentColor" role="img" aria-label="산">
-  <title>산</title>
-  <path fill-rule="evenodd" d="M2 21 9 8l4 6 2.5-3.5L22 21z"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 32" width="24" height="32" role="img" aria-label="mountain">
+  <path d="M12 1.2C6.62 1.2 2.26 5.56 2.26 10.94c0 6.9 8.32 18.5 8.68 18.99a1.32 1.32 0 0 0 2.12 0c.36-.49 8.68-12.09 8.68-18.99C21.74 5.56 17.38 1.2 12 1.2z" fill="currentColor" stroke="#ffffff" stroke-width="1.6" stroke-linejoin="round"/>
+  <g fill="#ffffff" transform="translate(6 5)">
+      <path d="M.3 10.6 4.5 2.7l2.35 4.1 1.25-1.6 3.6 5.4z"/>
+      <path d="M4.5 2.7 3.1 5.35l1.4-.6 1.35.85z" fill="#fff"/>
+  </g>
 </svg>

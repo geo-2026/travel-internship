@@ -1,80 +1,68 @@
-// =====================================================================
-//  Travel Internship — 교사 설정 파일
-//  ---------------------------------------------------------------
-//  ★ 이 파일 한 개만 교체하면 키 교체가 완료됩니다.
-//  ★ 학생은 아무 키도 입력하지 않습니다.
+// config.js — 교사가 관리하는 유일한 설정 파일.
+// 발급 절차와 URL 제한 설정은 README.md 「2. Mapbox 토큰 발급」 참고.
 //
-//  키 발급 방법과 교체 절차는 README.md 를 참고하세요.
-// =====================================================================
+// ⚠ 아래 MAPBOX_TOKEN 은 **자리표시자 그대로 두세요.**
+//    실제 토큰은 GitHub 저장소의 비밀값(Secret) `MAPBOX_TOKEN` 에 들어 있고,
+//    배포할 때 `.github/workflows/deploy.yml` 이 이 줄에 끼워 넣습니다.
+//    토큰을 여기 직접 적으면 GitHub 푸시 보호에 막힙니다.
+//
+//    토큰 교체 방법: 저장소 → Settings → Secrets and variables → Actions
+//                   → MAPBOX_TOKEN 값 수정 → Actions 탭에서 Deploy 재실행
+//
+//    로컬에서 지도를 보려면 config.local.example.js 를 참고해
+//    `config.local.js` 를 만드세요(이 파일은 GitHub 에 올라가지 않습니다).
 
 export const CONFIG = {
   APP_TITLE: "Travel Internship",
 
-  // -------------------------------------------------------------------
-  // 1) MapTiler 키 (지도 타일 · 정적 지도 폴백 · 지오코딩 폴백)
-  //    maptiler.com 가입 → Keys → 새 키 생성
-  //    ★ Allowed origins 에 배포 주소만 등록하세요.
-  //       예) https://<교사계정>.github.io/*
-  //    아래 값이 "YOUR_MAPTILER_KEY" 인 동안에는 앱이 '데모 모드'로 동작합니다.
-  // -------------------------------------------------------------------
-  MAPTILER_KEY: "YOUR_MAPTILER_KEY",
+  // 배포 시 GitHub Actions 가 교사 계정의 **public** 토큰(pk.)으로 치환합니다.
+  // sk. 로 시작하는 secret 토큰은 어떤 경우에도 쓰지 마세요.
+  MAPBOX_TOKEN: "pk.PASTE_YOUR_MAPBOX_PUBLIC_TOKEN_HERE",
 
-  // 사용할 MapTiler 스타일 (streets-v2 / outdoor-v2 / satellite)
-  MAPTILER_STYLE: "streets-v2",
+  MAX_PLACES: 20,
+  SEARCH_RATE_LIMIT_PER_MIN: 20,
 
-  // -------------------------------------------------------------------
-  // 2) OpenRouteService 키 (방문지 간 경로)
-  //    openrouteservice.org 가입 → Dashboard → Request a token
-  //
-  //    ⚠ ORS 무료 키는 도메인 제한을 걸 수 없습니다(명세서 §10-3).
-  //       - B안(현재 설정): 키를 그대로 넣고 학기마다 재발급
-  //       - A안으로 바꾸려면 아래 ORS_PROXY_URL 에 Cloudflare Worker 주소를
-  //         넣으세요. 그 경우 ORS_KEY 는 비워둡니다.
-  //    아래 값이 "YOUR_ORS_KEY" 이고 프록시도 없으면 경로는 점선 직선으로 표시됩니다.
-  // -------------------------------------------------------------------
-  ORS_KEY: "YOUR_ORS_KEY",
-  ORS_PROXY_URL: "", // 예) "https://travel-internship.<계정>.workers.dev/route"
-
-  // -------------------------------------------------------------------
-  // 3) Photon (장소 검색) — 키 불필요
-  //    학교 단위 상시 운영 시 자체 호스팅 주소로 교체 가능
-  // -------------------------------------------------------------------
-  PHOTON_URL: "https://photon.komoot.io/api/",
-
-  // -------------------------------------------------------------------
-  // 4) 사용량 · 제한 설정
-  // -------------------------------------------------------------------
-  MAX_PLACES: 20,                 // 방문지 합계 상한
-  SEARCH_MIN_LENGTH: 2,           // 이 글자 수 미만이면 검색하지 않음
-  SEARCH_DEBOUNCE_MS: 500,        // 입력 디바운스
-  SEARCH_MIN_INTERVAL_MS: 1000,   // 검색 호출 최소 간격 (1초 1회)
-  SEARCH_RATE_LIMIT_PER_MIN: 20,  // 분당 상한
-  SEARCH_RESULT_LIMIT: 5,         // 결과 표시 개수
-  SEARCH_RETRY_MAX: 2,            // 429/5xx 재시도 횟수
-
-  // Photon 실패 시 MapTiler 지오코딩으로 한 번 더 시도할지 (MapTiler 한도를 소모)
-  USE_MAPTILER_GEOCODING_FALLBACK: true,
-
-  ROUTE_DEBOUNCE_MS: 800,         // 순서 변경이 멈춘 뒤 이 시간 후 1회만 ORS 호출
-
-  // 저장 디바운스
-  SAVE_DEBOUNCE_MS: 500,
-
-  // -------------------------------------------------------------------
-  // 5) 라이브러리 CDN (오프라인 배포 시 로컬 경로로 교체)
-  // -------------------------------------------------------------------
-  CDN: {
-    MAPLIBRE_JS: "https://cdn.jsdelivr.net/npm/maplibre-gl@5.6.0/dist/maplibre-gl.js",
-    MAPLIBRE_CSS: "https://cdn.jsdelivr.net/npm/maplibre-gl@5.6.0/dist/maplibre-gl.css",
-    JSPDF: "https://cdn.jsdelivr.net/npm/jspdf@3.0.1/dist/jspdf.umd.min.js"
-  }
+  MAP_STYLE: "mapbox://styles/mapbox/streets-v12",
+  STORAGE_KEY: "travelInternship.v1"
 };
 
-// 키가 실제로 설정되었는지 판정 (콘솔·화면에 키 값을 출력하지 않습니다)
-export const HAS_MAPTILER_KEY =
-  !!CONFIG.MAPTILER_KEY && !/^YOUR_/.test(CONFIG.MAPTILER_KEY);
+// 토큰이 비어 있거나 예시 값 그대로면 앱이 안내 배너를 띄웁니다.
+export function hasToken() {
+  const t = CONFIG.MAPBOX_TOKEN;
+  return typeof t === "string" && t.startsWith("pk.") && !t.includes("PASTE_YOUR");
+}
 
-export const HAS_ORS =
-  !!CONFIG.ORS_PROXY_URL || (!!CONFIG.ORS_KEY && !/^YOUR_/.test(CONFIG.ORS_KEY));
+/** 지금 보고 있는 곳이 로컬 미리보기(내 컴퓨터)인지. */
+export function isLocalPreview() {
+  const h = location.hostname;
+  return h === "localhost" || h === "127.0.0.1" || h === "::1" || h === "";
+}
 
-export default CONFIG;
+// ── 로컬 미리보기용 토큰 갈아끼우기 ──────────────────────────────────────────
+//
+// 배포용 토큰(travel-internship-class)은 URL 제한이 걸려 있어서
+// http://127.0.0.1 에서는 Mapbox 가 403 으로 막습니다. 그래서 로컬로 열면
+// 지도가 뜨지 않는 것이 정상입니다.
+//
+// 옆에 `config.local.js` 파일이 있으면 **로컬에서만** 그 안의 토큰으로 바꿔 씁니다.
+// 이 파일은 `.gitignore` 에 들어 있어 GitHub 에 올라가지 않습니다.
+// 만드는 법은 `config.local.example.js` 를 참고하세요.
+//
+// 배포 주소에서는 아예 불러오지 않으므로 학생 쪽에는 아무 영향이 없습니다.
+export const RUNTIME = { localTokenApplied: false };
+
+export async function initConfig() {
+  if (!isLocalPreview()) return CONFIG;
+  try {
+    const mod = await import("./config.local.js");
+    const t = mod && mod.LOCAL_MAPBOX_TOKEN;
+    if (typeof t === "string" && t.startsWith("pk.")) {
+      CONFIG.MAPBOX_TOKEN = t;
+      RUNTIME.localTokenApplied = true;
+      console.info("로컬 미리보기 — config.local.js 의 토큰을 사용합니다.");
+    }
+  } catch {
+    // 파일이 없으면 그대로 둔다. 지도는 안 뜨지만 나머지는 전부 확인할 수 있다.
+  }
+  return CONFIG;
+}

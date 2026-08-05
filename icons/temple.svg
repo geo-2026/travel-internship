@@ -1,7 +1,7 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24" fill="currentColor" role="img" aria-label="사찰">
-  <title>사찰</title>
-  <path fill-rule="evenodd" d="M12 2 3 7h18z"/>
-  <path fill-rule="evenodd" d="M5 8.5h14l2 3.5H3z"/>
-  <path fill-rule="evenodd" d="M7 13h10l2 3.5H5z"/>
-  <path fill-rule="evenodd" d="M4 18h16v4H4z"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 32" width="24" height="32" role="img" aria-label="temple">
+  <path d="M12 1.2C6.62 1.2 2.26 5.56 2.26 10.94c0 6.9 8.32 18.5 8.68 18.99a1.32 1.32 0 0 0 2.12 0c.36-.49 8.68-12.09 8.68-18.99C21.74 5.56 17.38 1.2 12 1.2z" fill="currentColor" stroke="#ffffff" stroke-width="1.6" stroke-linejoin="round"/>
+  <g fill="#ffffff" transform="translate(6 5)">
+      <path d="M6 .7.9 3.4h10.2zM2 4.3h8l1.5 2.1H.5zM3 7.2h6l1.3 2.2H1.7z"/>
+      <rect x="5.1" y="9.9" width="1.8" height="1.7"/>
+  </g>
 </svg>

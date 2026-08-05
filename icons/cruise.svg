@@ -1,7 +1,8 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24" fill="currentColor" role="img" aria-label="유람선">
-  <title>유람선</title>
-  <path fill-rule="evenodd" d="M2 17h20l-2.5 5H4.5z"/>
-  <path fill-rule="evenodd" d="M5 10h11v6H5zM6.6 11.4a1 1 0 1 0 2 0 1 1 0 1 0-2 0zM9.6 11.4a1 1 0 1 0 2 0 1 1 0 1 0-2 0zM12.6 11.4a1 1 0 1 0 2 0 1 1 0 1 0-2 0z"/>
-  <path fill-rule="evenodd" d="M7 6h7v3H7z"/>
-  <path fill-rule="evenodd" d="M17.2 8h2.6v8h-2.6z"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 32" width="24" height="32" role="img" aria-label="cruise">
+  <path d="M12 1.2C6.62 1.2 2.26 5.56 2.26 10.94c0 6.9 8.32 18.5 8.68 18.99a1.32 1.32 0 0 0 2.12 0c.36-.49 8.68-12.09 8.68-18.99C21.74 5.56 17.38 1.2 12 1.2z" fill="currentColor" stroke="#ffffff" stroke-width="1.6" stroke-linejoin="round"/>
+  <g fill="#ffffff" transform="translate(6 5)">
+      <path d="M.7 7.7h10.6l-1.5 2.85c-.35.65-.95 1.05-1.7 1.05H3.9c-.75 0-1.35-.4-1.7-1.05z"/>
+      <path fill-rule="evenodd" d="M2.4 3.4h7.2v3.6H2.4zm1.6 1a.8.8 0 1 0 0 1.6.8.8 0 0 0 0-1.6zm4 0a.8.8 0 1 0 0 1.6.8.8 0 0 0 0-1.6z"/>
+      <rect x="5.2" y=".5" width="1.6" height="2.4"/>
+  </g>
 </svg>

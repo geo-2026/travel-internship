@@ -1,316 +1,233 @@
-# Travel Internship — 여행지리 여행 계획 만들기
+# Travel Internship
 
-고등학교 **여행지리** 수업용 정적 웹앱입니다.
-학생은 링크에 접속만 하면 됩니다. **로그인도, API 키 입력도 없습니다.**
+여행지리 수업용 여행 계획 지도 앱. 학생이 여행 계획을 세우고 방문지를 지도에 표시한 뒤
+**2쪽짜리 PDF**로 내려받아 제출합니다.
 
-```
-[1단계] 여행 정보 입력  →  [2단계] 지도에 방문지 표시  →  [3단계] 순서·비용 정리 → PDF 저장
-```
+> **학생 배포 링크 — <https://geo-2026.github.io/travel-internship/>**
+> 이 주소가 토큰의 URL 제한에 걸려 있습니다. **저장소 이름과 브랜치를 바꾸면 지도가 멈춥니다.**
 
-- 지도 : **MapLibre GL JS v5 + MapTiler** 벡터 타일
-- 장소 검색 : **Photon** (OpenStreetMap 기반, 키 불필요)
-- 경로 : **OpenRouteService(ORS)** Directions
-- 데이터 : **전량 학생 기기의 localStorage.** 서버·DB·전송 없음
-
-## 학생용 주소
-
-<https://geo-2026.github.io/travel-internship/>
-
-<img src="qr.png" alt="학생용 접속 QR 코드" width="200">
-
-> ⚠ **현재는 초기 점검용 배포입니다.** MapTiler 키를 아직 넣지 않아 **데모 모드**로 동작합니다
-> (지도 배경 타일만 없고 마커·경로·PDF 등 나머지는 모두 정상). 1절의 키 발급을 마치면
-> `config.js` 한 줄 교체로 실제 지도가 나옵니다. **학생에게 배포하기 전에 키를 먼저 넣으세요.**
+- 학생은 **가입·로그인·키 입력 없이** 링크 접속만 하면 됩니다.
+- 입력값은 **학생 기기의 localStorage 에만** 저장됩니다. 서버·DB·외부 전송이 없습니다.
+- 외부로 나가는 값은 **검색어와 좌표뿐**입니다. 학번·이름·여행 명칭은 어떤 API에도 보내지 않습니다.
 
 ---
 
-## 1. 교사 준비 (처음 한 번, 약 15분)
+## 1. 교사 준비 — 3단계 요약
 
-### 1-1. MapTiler 키 발급 — 필수
+| 순서 | 할 일 | 걸리는 시간 |
+|---|---|---|
+| 1 | Mapbox public 토큰 발급 + URL 제한 걸기 | 약 10분 |
+| 2 | `config.js` 의 `MAPBOX_TOKEN` 한 줄 교체 후 커밋 | 1분 |
+| 3 | GitHub Pages 켜고 링크·QR 배포 | 5분 |
 
-1. <https://www.maptiler.com/> 가입 → **Keys** → **New key** (이름 예: `travel-internship-class`)
-2. 그 키의 **Allowed origins** 에 배포 주소만 등록합니다.
+`data/cities.json` 에 이번 단원에서 다룰 도시가 들어 있는지도 수업 전에 확인해 주세요
+(현재 68개 도시 수록).
+
+---
+
+## 2. Mapbox 토큰 발급
+
+1. [mapbox.com](https://www.mapbox.com/) 가입 → 이메일 인증
+2. **Account → Tokens → Create a token**
+3. 이름: `travel-internship-class`
+4. **Public scope 만** 체크합니다 — `styles:tiles`, `styles:read`, `fonts:read`, `datasets:read` 등 읽기 전용.
+   `*:write`, `tokens:write` 같은 **Secret scope 는 절대 체크하지 마세요.**
+5. **URL restrictions** 에 배포 주소만 입력합니다.
+
    ```
-   https://geo-2026.github.io/*
+   https://geo-2026.github.io/travel-internship/*
    ```
-   → 키가 노출되어도 다른 사이트에서는 쓸 수 없습니다. **이 앱의 핵심 방어선입니다.**
-3. `config.js` 를 열어 한 줄만 바꿉니다.
+
+   > 이 항목이 **이 앱의 가장 중요한 방어선**입니다. 토큰이 노출되어도 다른 사이트에서는
+   > 요청이 거부됩니다.
+
+6. 발급된 `pk.` 로 시작하는 토큰을 `config.js` 에 붙여 넣습니다.
+
    ```js
-   MAPTILER_KEY: "여기에_발급받은_키",
+   // config.js — 이 한 줄만 바꾸면 토큰 교체 완료
+   MAPBOX_TOKEN: "pk.여기에붙여넣기",
    ```
-4. 무료 플랜은 **비상업적 사용** 조건입니다. 화면·PDF의 저작권 표기와 로고를 지우지 마세요.
-5. **결제수단은 등록하지 않는 것을 권장합니다.** 무료 플랜은 한도를 넘으면 과금이 아니라
-   다음 달까지 서비스가 일시 중지되는 방식이라 청구 사고 위험이 낮습니다.
 
-### 1-2. OpenRouteService 키 발급 — 선택(권장)
+7. `sk.` 로 시작하는 **secret token 은 어떤 경우에도** 프런트엔드·저장소에 두지 않습니다.
 
-1. <https://openrouteservice.org/> 가입 → Dashboard → **Request a token** (무료 플랜)
-2. `config.js` 의 `ORS_KEY` 에 넣습니다.
+### 토큰이 아직 없을 때
 
-> ⚠ **ORS 무료 키는 도메인 제한을 걸 수 없습니다.**
-> 정적 웹앱에 넣으면 키를 복사한 누구나 쓸 수 있습니다. 셋 중 하나를 고르세요.
->
-> | 방식 | 내용 |
-> |---|---|
-> | **B. 키 내장** (현재 기본값) | 가장 단순. 한 학기 수업용이면 충분하며 **학기마다 재발급**하세요. |
-> | A. Cloudflare Worker 프록시 | 키를 Worker Secret 에 두고 중계. `config.js` 의 `ORS_PROXY_URL` 에 주소를 넣고 `ORS_KEY` 는 비웁니다. → 키가 브라우저에 노출되지 않습니다. |
-> | C. 경로 기능 없이 운영 | 키를 넣지 않으면 방문지를 잇는 **점선 직선**으로 표시됩니다. 수업은 그대로 진행됩니다. |
+토큰을 넣지 않아도 앱은 켜집니다. 화면 위에 안내 배너가 뜨고 지도·검색·경로만 동작하지 않습니다.
+1페이지 입력, 카드 목록, 순서 지정, PDF 생성은 그대로 확인할 수 있습니다.
 
-**키를 넣지 않아도 앱은 동작합니다.** MapTiler 키가 없으면 지도 대신 안내가 표시되는
-**데모 모드**로 켜지고, ORS 키가 없으면 경로가 직선으로 표시됩니다.
+### 유출·과다 사용을 발견했을 때 (5분 조치)
 
-### 1-3. 수업 도시 · 장소 사전 손보기 — 이 준비가 가장 중요합니다
-
-| 파일 | 무엇을 넣나 |
-|---|---|
-| `data/cities.json` | 수업에서 다룰 도시. 지금은 60개가 들어 있습니다. |
-| `data/aliases.json` | **한글 장소명 → 영문 표기 사전.** |
-
-Photon 은 OpenStreetMap 을 색인하기 때문에 **한국어 질의에 약합니다.**
-"오사카성", "이치란 라멘" 같은 한글 검색은 결과가 없거나 엉뚱하게 나올 수 있습니다.
-그래서 앱은 이렇게 대응합니다.
-
-```
-한글 입력 → ① 별칭 사전으로 영문 치환 → ② Photon(lang=en)
-          → 0건이면 ③ Photon(lang=default, 현지어) 재시도
-          → 0건이면 ④ MapTiler 지오코딩 폴백
-          → 그래도 없으면 ⑤ [지도에서 직접 위치 지정] 안내
-```
-
-**수업 전에 그 단원 도시의 주요 장소 20~30개를 `aliases.json` 에 넣어 두세요.**
-학생 체감 검색 성공률이 크게 달라집니다.
-
-```json
-{
-  "오사카성": "Osaka Castle",
-  "도톤보리": "Dotonbori",
-  "우메다 스카이빌딩": "Umeda Sky Building"
-}
-```
-
-도시를 추가할 때는 아래 형식을 지킵니다. `center` 와 `bbox` 는 **[경도, 위도]** 순서입니다.
-
-```json
-{ "nameKo": "오사카", "nameEn": "Osaka", "country": "일본",
-  "center": [135.5023, 34.6937], "zoom": 11,
-  "bbox": [135.40, 34.60, 135.60, 34.78],
-  "aliases": ["오사카시", "Osaka", "大阪"] }
-```
-
-- `country` 가 `"대한민국"` 이면 항공료 입력칸이 자동으로 숨겨집니다.
-- 1단계 도시 선택은 **인터넷 검색을 하지 않습니다.** 이 파일만 읽어 메모리에서 찾습니다.
+1. Mapbox 대시보드에서 해당 토큰 **삭제**
+2. 같은 설정으로 **신규 발급**
+3. `config.js` 의 `MAPBOX_TOKEN` **1줄 교체**
+4. 커밋 → push (GitHub Pages 가 1~2분 내 반영)
 
 ---
 
-## 2. 배포 (GitHub Pages)
+## 3. 배포 (GitHub Pages)
 
-**이미 배포되어 있습니다.**
+이미 배포되어 있습니다. 아래는 처음부터 다시 만들 때의 절차입니다.
 
-| 항목 | 값 |
-|---|---|
-| 저장소 | <https://github.com/geo-2026/travel-internship> (공개) |
-| 학생용 주소 | <https://geo-2026.github.io/travel-internship/> |
-| 설정 | `main` 브랜치 `/ (root)`, `.nojekyll` 포함 |
-| QR 코드 | 저장소의 `qr.png` (위 주소로 연결됨) |
+1. 저장소 이름을 **`travel-internship`** 으로 만듭니다. 링크가 저장소 이름으로 정해지므로
+   **학기 중에 저장소명·브랜치명을 바꾸지 마세요.**
+2. 이 폴더의 내용을 저장소 루트에 올립니다.
+3. **Settings → Pages → Source: `main` 브랜치 / `(root)`**
+4. 고정 링크: **<https://geo-2026.github.io/travel-internship/>**
+5. **Settings → Code security → Secret scanning** 을 켜 두면 실수로 올린 토큰을 잡아 줍니다.
 
-### 내용을 고친 뒤 반영하기
-
-파일을 수정했다면 아래 세 줄이면 1~2분 안에 배포 주소에 반영됩니다.
+### 수정 사항을 올릴 때
 
 ```bash
-cd travel-internship
+cd "C:\Users\Administrator\Desktop\travel-internship"
 git add -A
-git commit -m "설명"
+git commit -m "무엇을 바꿨는지"
 git push
 ```
 
-> **저장소명과 브랜치명은 학기 중에 바꾸지 마세요.**
-> 링크가 끊기면 안내 자료를 전부 다시 배포해야 합니다.
+푸시하고 1~2분 뒤에 반영됩니다. 학생 화면에 옛 파일이 남아 있으면
+**Ctrl+Shift+R**(안드로이드·iOS 는 새로고침 후 재접속)로 새로 받게 안내해 주세요.
 
-### 처음부터 다른 계정에 배포하려면
+`.nojekyll` 파일이 들어 있어야 `_` 로 시작하는 경로가 무시되지 않습니다 (이미 포함되어 있습니다).
 
-1. GitHub 에 **`travel-internship`** 이름으로 저장소를 만듭니다.
-2. 이 폴더의 내용을 전부 올립니다. (`.nojekyll` 파일도 반드시 포함)
-3. Settings → Pages → Source: **main 브랜치 / (root)**
-4. 몇 분 뒤 `https://<교사계정>.github.io/travel-internship/` 가 열립니다.
-5. MapTiler 키의 **Allowed origins** 를 새 주소로 바꾸고, `qr.png` 도 새로 만듭니다.
+### 학생 배포용 QR 코드
 
-### 로컬에서 먼저 확인하려면
+배포 주소가 정해진 뒤 아래 명령으로 만듭니다.
 
-브라우저 보안 정책 때문에 `index.html` 을 더블클릭해서 여는 방식(`file://`)은 동작하지 않습니다.
-간단한 서버를 띄워 주세요.
+```bash
+pip install "qrcode[pil]"
+python tools/make_qr.py https://geo-2026.github.io/travel-internship/
+# → docs/qr.png 생성
+```
+
+만들어진 `docs/qr.png` 를 학습지·클래스룸에 넣어 배포하세요.
+
+---
+
+## 4. 로컬에서 미리 보기
+
+이 앱은 ES 모듈과 `fetch` 를 쓰기 때문에 `index.html` 을 더블클릭해서 여는 방식
+(`file://`)으로는 동작하지 않습니다. 아주 작은 로컬 서버가 필요합니다.
 
 ```bash
 cd travel-internship
-python -m http.server 8000
-#  →  http://localhost:8000
+python -m http.server 8777
+# 브라우저에서 http://127.0.0.1:8777/ 접속
 ```
 
 ---
 
-## 3. 키 유출·과다 사용 시 조치 (5분)
-
-1. MapTiler(또는 ORS) 대시보드에서 **해당 키 삭제**
-2. **새 키 발급** (MapTiler 는 Allowed origins 재설정 필수)
-3. `config.js` 의 해당 한 줄만 교체
-4. 커밋 → 푸시. 몇 분 뒤 반영됩니다.
-
-- 저장소에 유료·비밀 키나 `.env` 실제 값을 커밋하지 마세요.
-- **키를 난독화해서 "숨겼다"고 판단하지 마세요.** 효과가 없습니다.
-- 앱은 화면·콘솔 어디에도 키 값을 출력하지 않습니다.
-
----
-
-## 4. 무료 한도와 수업 규모
-
-| 서비스 | 무료 한도 | 초과 시 |
-|---|---|---|
-| MapTiler | 월 API 요청 10만 건, **세션 5,000건** | 과금이 아니라 다음 달까지 서비스 일시 중지 |
-| ORS | 일 2,500건 · 월 40,000건 | 429 응답 |
-| Photon | 공식 수치 없음(공정 사용) | 스로틀링 또는 차단 |
-
-> 수치는 2026년 8월 기준입니다. **배포 전에 각 서비스 문서에서 다시 확인하세요.**
-
-**MapTiler 의 병목은 요청 수가 아니라 "세션(지도 객체 초기화) 5,000건"** 입니다.
-이 앱은 **지도 인스턴스를 앱 전체에서 1개만 만들어 재사용**합니다.
-페이지를 옮길 때 지도를 파괴하지 않고 DOM 위치만 옮기므로 **학생 1명당 세션 1건**입니다.
-
-추정: 40명 × 3개 반 × 4차시 ≈ 480명분 → 세션 약 500건 · ORS 약 500건 · Photon 5천~1만 건 → 모두 한도 안.
-
-**주의**: ORS 일 2,500건은 하루에 여러 반이 몰릴 때 빠듯할 수 있습니다.
-이 앱은 순서 변경 후 **800ms 뒤 1회만** 호출하고 같은 순서 조합은 캐싱합니다.
-
-### Photon 공용 서버 사용 예절 (앱에 이미 적용됨)
-
-- 2글자 미만 질의 차단, 세션 내 동일 질의 캐싱
-- **1초 1회 · 분당 20회** 상한 (초과 시 "잠시 후 다시 검색해 주세요")
-- 타이핑 중 자동 호출이 아니라 **[검색] 버튼 또는 Enter 로만** 호출
-  → 40명 동시 접속 시 호출량이 자동완성 방식의 1/5 이하
-- 429/5xx 는 지수 백오프로 최대 2회 재시도
-
-학교 단위로 상시 운영할 계획이면 **Photon 자체 호스팅**(Docker + 국가별 덤프)을 검토하세요.
-`config.js` 의 `PHOTON_URL` 만 바꾸면 됩니다.
-
----
-
-## 5. 개인정보 처리
-
-- 모든 입력값은 학생 기기의 **localStorage** 에만 저장됩니다. 쿠키·분석 스크립트 없음.
-- 외부로 나가는 것은 **검색어와 좌표뿐** 입니다.
-  **학번·이름·여행 명칭은 어떤 API 에도 전송되지 않습니다.**
-- 교사도 학생 입력 내용을 열람할 수 없습니다(서버가 없음). 제출은 학생이 저장한 PDF 로만 이루어집니다.
-- 설정(⚙)에 **[입력 내용 전체 삭제]** 가 있습니다. 공용 크롬북은 수업 종료 시 눌러 달라고 안내하세요.
-- 기기를 바꿔 이어서 작업하려면 설정의 **[계획 내보내기(JSON)] / [불러오기]** 를 쓰면 됩니다.
-
----
-
-## 6. 폴더 구성
+## 5. 폴더 구조
 
 ```
 travel-internship/
-├─ index.html
-├─ config.js                     ← ★ 교사가 건드리는 유일한 파일
+├─ index.html                    # <title>Travel Internship</title>
+├─ config.js                     # ★ 교사가 손대는 유일한 파일 (토큰)
 ├─ css/style.css
 ├─ js/
-│   ├─ app.js       페이지 전환 · 복원 · 설정
-│   ├─ storage.js   localStorage 데이터 모델
-│   ├─ map.js       ★ 지도 인스턴스 1개 생성·재사용
-│   ├─ icons.js     아이콘 38종 도형 + 마커 이미지 생성
-│   ├─ search.js    Photon · 별칭 사전 · 사용량 제한
-│   ├─ route.js     ORS · 디바운스 · 캐싱 · 직선 폴백
-│   ├─ modal.js     팝업 공통 프레임
-│   ├─ popups.js    팝업 5종
-│   ├─ page1.js / page2.js / page3.js
-│   └─ pdf.js       2쪽 PDF (3단계에서 동적 로드)
-├─ data/cities.json              ← 수업 도시 (자유롭게 추가·삭제)
-├─ data/aliases.json             ← 한글→영문 장소명 사전
-├─ icons/*.svg                   ← 아이콘 원본 38종
-├─ fonts/NotoSansKR-Regular.js   ← PDF용 한글 폰트 (base64)
-├─ qr.png                        ← 학생 배포용 QR (배포 주소로 연결)
+│   ├─ app.js                    # 라우팅 + 1·2·3페이지 화면
+│   ├─ storage.js                # localStorage 단일 키 관리
+│   ├─ map.js                    # 지도 인스턴스 1개 재사용, symbol layer
+│   ├─ search.js                 # Geocoding + 호출 절감 장치
+│   ├─ route.js                  # Directions + 캐싱
+│   ├─ placeform.js              # 방문지 팝업 4종 + 이동방법 팝업
+│   ├─ icons.js                  # 유형별 색상·아이콘 팔레트
+│   ├─ ui.js                     # 모달·토스트·금액 입력
+│   └─ pdf.js                    # 2쪽 PDF (3페이지 진입 시 동적 import)
+├─ data/cities.json              # 도시 프리셋 68개 (한글명 포함)
+├─ icons/*.svg                   # 유형별 아이콘 38종 (자체 제작)
+├─ fonts/NotoSansKR-Regular.js   # 한글 서브셋 base64 (SIL OFL)
+├─ vendor/                       # mapbox-gl 3.x, jsPDF 3.x (저장소에 포함)
+├─ tools/                        # 폰트·아이콘·QR 생성 스크립트
 ├─ .nojekyll
 └─ README.md
 ```
 
-모든 파일은 **UTF-8 (BOM 없음)** 입니다. 편집기에서 인코딩을 바꾸지 마세요.
+의존성을 CDN 대신 `vendor/` 에 넣어 둔 이유는, 학교망에서 CDN 이 막혀도 수업이
+멈추지 않게 하기 위해서입니다.
 
 ---
 
-## 7. 라이선스 · 출처
+## 6. 사용량과 비용
 
-| 항목 | 출처 · 라이선스 |
-|---|---|
-| 지도 타일 | © [MapTiler](https://www.maptiler.com/copyright/) · © [OpenStreetMap contributors](https://www.openstreetmap.org/copyright) (ODbL) |
-| 장소 검색 | [Photon](https://photon.komoot.io/) · OpenStreetMap 데이터 (ODbL) |
-| 경로 | [openrouteservice](https://openrouteservice.org/) · OpenStreetMap 데이터 (ODbL) |
-| 지도 라이브러리 | [MapLibre GL JS](https://maplibre.org/) (BSD-3-Clause) |
-| PDF 라이브러리 | [jsPDF](https://github.com/parallax/jsPDF) (MIT) |
-| 한글 폰트 | [Noto Sans KR](https://fonts.google.com/noto/specimen/Noto+Sans+KR) (SIL Open Font License 1.1) |
-| **아이콘 38종** | **이 저장소에서 직접 그린 도형입니다. 퍼블릭 도메인(CC0) 으로 배포합니다.** 외부 아이콘 세트를 쓰지 않으므로 이름 오타로 마커가 사라질 일이 없습니다. |
+2026년 8월 기준 월 무료 한도(배포 전 [mapbox.com/pricing](https://www.mapbox.com/pricing) 재확인):
 
-지도 화면과 PDF 두 곳 모두에 저작자 표시가 들어갑니다. **표기를 지우지 마세요.**
+| 제품 | 월 무료 한도 | 학생 1명·1차시 추정 |
+|---|---|---|
+| 웹 지도 로드 | 약 50,000 | 2~3 |
+| Search Box (방문지 검색) | 약 50,000 | 15~30 |
+| Geocoding (도시 검색·검색 보조) | 약 100,000 | 0~5 |
+| Directions | 약 100,000 | 3~5 |
+| Static Images | 약 50,000 | 0~1 (폴백일 때만) |
 
-### 한글 폰트를 다시 만들려면
+**40명 × 3개 반 × 4차시 ≈ 지도 로드 1,500 / 검색 1만 내외** 로 무료 한도 안에서 여유 있게 운영됩니다.
 
-`fonts/NotoSansKR-Regular.js` 는 Noto Sans KR 가변 폰트를 `wght=400` 으로 고정한 뒤
-아래 범위만 남긴 서브셋입니다(TTF 약 2.5MB → base64 약 3.3MB). 3단계에 들어갈 때만 내려받습니다.
+> ⚠ Mapbox 에는 자동으로 과금을 막는 하드 지출 상한이 없습니다.
+> **계정에 결제수단을 등록하지 않은 상태로 유지**하고, 대시보드에서 **사용량 알림**을
+> 무료 한도의 70%·90% 지점에 설정해 두세요.
 
-- 라틴 · 문장부호 · **한글 음절 전체(U+AC00–D7A3)** · 히라가나/가타카나
-- `① ~ ⑳`, `₩`, `※`, `·`, `●▲▼` 등
+### 앱에 들어 있는 호출 절감 장치
+
+- 도시 선택은 내장 목록이 기본 → **네트워크 호출 0회**
+- 검색: 디바운스 300ms, 2글자 미만 차단, 동일 질의 캐싱, **분당 20회 상한**, 429/5xx 지수 백오프 2회
+- 검색 1회 = **API 1회**. 결과가 0건일 때만 보조 경로로 1회 더 부릅니다
+- 경로: 순서 변경이 멈춘 뒤 **800ms 후 1회만** 호출, 동일 순서 조합 캐싱
+- 지도 인스턴스는 앱 전체에서 **1개**만 만들어 페이지 전환 시 재사용
+- PDF 지도는 캔버스 캡처가 기본이라 **추가 API 호출 0회**
+
+---
+
+## 7. 수업 운영 메모
+
+- 지도 라이브러리(1.8MB)는 **2페이지에 처음 들어갈 때** 내려받습니다. 수업 시작 직후 접속이
+  몰려도 1페이지는 가볍게 열립니다.
+- jsPDF 와 한글 폰트는 **3페이지 진입 시** 내려받습니다.
+- 한글 라벨이 없는 지역은 현지어로 표시되는 것이 정상입니다. 학생에게 미리 안내해 주세요.
+- 검색이 안 될 때를 대비해 **지도를 길게 눌러 위치를 직접 지정**하는 길을 같은 위치에 두었습니다.
+
+### ★ 장소 검색 — 수업 전에 꼭 안내할 것
+
+방문지 검색은 **선택한 도시 범위 안에서만** 찾습니다. 실제로 확인한 동작은 이렇습니다.
+
+| 상황 | 결과 | 학생에게 안내할 말 |
+|---|---|---|
+| **국내** 장소를 한글로 | 잘 찾습니다 (경복궁, 광장시장, 성산일출봉, 해운대해수욕장 등) | 그냥 한글로 치면 됩니다 |
+| **해외** 장소를 한글 음차로 | **못 찾습니다** (오사카성 ✗, 도쿄타워 ✗) | — |
+| 해외 장소를 **현지어·영문**으로 | 잘 찾습니다 (大阪城 ✓, 清水寺 ✓, Sagrada Familia ✓, Colosseo ✓, Wat Pho ✓) | **해외는 현지어나 영문으로 검색** |
+| 주소·지하철역 | 잘 찾습니다 (서울 종로구 사직로 161, 경복궁역) | 이름이 안 나오면 주소로 |
+| 그래도 안 나올 때 | — | **지도를 0.6초 길게 눌러 직접 지정** |
+
+해외 장소가 한글로 안 잡히는 것은 Mapbox 검색 색인에 한글 음차 이름이 없기 때문이며,
+앱 설정으로 해결할 수 있는 문제가 아닙니다. 화면에도 해외 도시를 고른 학생에게는
+"영문·현지어 이름으로 검색해 보세요" 안내가 자동으로 뜹니다.
+- **대중교통 경로는 도로 기준 근사**입니다(Mapbox Directions 에 transit 프로필이 없음).
+  화면과 PDF 양쪽에 안내 문구가 자동으로 붙습니다.
+- 공용 크롬북은 브라우저 프로필별로 저장되므로, 수업이 끝나면 **설정 → [입력 내용 전체 삭제]** 를 안내해 주세요.
+- 기기가 바뀌어도 이어서 작업할 수 있도록 **설정 → [계획 내보내기/불러오기(JSON)]** 를 넣어 두었습니다.
+
+---
+
+## 8. 자산 다시 만들기 (선택)
+
+폰트나 아이콘을 바꿀 일이 있을 때만 필요합니다. 기본 상태로 쓸 거라면 건드리지 않아도 됩니다.
 
 ```bash
+# 아이콘 38종 다시 생성
+python tools/make_icons.py
+
+# 한글 폰트 서브셋 다시 생성 (fontTools 필요)
 pip install fonttools brotli
-# NotoSansKR[wght].ttf 를 내려받은 뒤
-fonttools varLib.instancer "NotoSansKR[wght].ttf" wght=400 -o NotoSansKR-400.ttf
-pyftsubset NotoSansKR-400.ttf \
-  --unicodes="U+0020-007E,U+00A0-00FF,U+2010-201F,U+2022,U+2026,U+203B,U+20A9,U+20AC,U+2190-2193,U+2460-2473,U+24EA,U+25A0-25CF,U+2605-2606,U+3000-303F,U+3040-30FF,U+3131-318E,U+AC00-D7A3,U+FF01-FF5E,U+FFE6" \
-  --layout-features=kern,liga,ccmp,locl --no-hinting --desubroutinize \
-  --output-file=NotoSansKR-subset.ttf
-# 결과를 base64 로 바꿔 fonts/NotoSansKR-Regular.js 형식으로 저장
+python tools/subset_font.py .              # KS X 1001 기준 (기본, 약 660KB)
+python tools/subset_font.py . --all-hangul # 현대 한글 11,172자 전체 (약 2.6MB)
+python tools/subset_font.py . --hanja      # 한자까지 포함
 ```
 
-> **한자(漢字)는 서브셋에 없습니다.** 파일 크기 때문입니다.
-> 검색 결과 원문이 `大阪城` 처럼 한자면 PDF 에서는 그 글자가 자동으로 빠집니다(빈 네모가 찍히지 않습니다).
-> 화면에서는 기기 글꼴로 정상 표시됩니다.
-> 발음기호가 붙은 라틴 글자(`Chūō`, `Łódź`)는 지우지 않고 기본 알파벳(`Chuo`, `Lodz`)으로 바꿔 찍습니다.
-
-#### ★ 폰트를 다시 만들었다면 반드시 확인할 것
-
-`js/pdf.js` 의 `RANGES` 는 **폰트에 실제로 들어 있는 글자 목록**입니다.
-서브셋 명령의 `--unicodes` 와 결과 폰트는 일치하지 않을 수 있습니다
-(요청한 범위 안에 원본 폰트에 없는 글자가 섞여 있으면 그대로 빠집니다).
-`RANGES` 에 없는 글자를 적어 두면 그 글자가 **PDF 에 빈 네모로 찍힙니다.**
-폰트를 새로 만든 뒤에는 아래로 대조해 `RANGES` 를 고치세요.
-
-```bash
-pyftsubset ... --output-file=NotoSansKR-subset.ttf
-python -c "from fontTools.ttLib import TTFont; f=TTFont('NotoSansKR-subset.ttf'); \
-cps=sorted(f.getBestCmap()); print(len(cps)); \
-print([hex(c) for c in cps if c < 0xAC00])"
-```
+`tools/icon-preview.html` 을 로컬 서버로 열면 아이콘 38종을 한눈에 확인할 수 있습니다.
 
 ---
 
-## 8. 수업 운영 팁
+## 9. 라이선스·출처
 
-- 수업 시작 직후 접속이 몰립니다. 지도는 **2단계에 들어갈 때** 처음 만들어지도록 되어 있습니다.
-- 학생 입력은 **0.5초 디바운스로 즉시 저장**됩니다. 네트워크가 끊겨도 입력 내용은 남습니다.
-- 접근성: 버튼은 최소 44×44px, 색상만으로 구분하지 않도록 **아이콘과 번호를 항상 함께** 표시합니다.
-- 교육적 연계: 지도·검색·경로가 모두 OpenStreetMap 기반입니다.
-  *"지도 데이터는 누가 만드는가"*, *"왜 어떤 장소는 검색되지 않는가"* 를 그대로 수업 소재로 쓸 수 있습니다.
-- 대중교통을 고르면 경로가 **자동차 도로 기준 근사**로 계산됩니다(무료 ORS 에는 대중교통 경로가 없습니다).
-  화면과 PDF 모두에 그 사실이 표기되니, 학생이 실제 지하철 노선으로 오해하지 않도록 함께 짚어 주세요.
-
----
-
-## 9. 자주 묻는 문제
-
-| 증상 | 원인 · 조치 |
-|---|---|
-| 지도 자리에 "지도 키가 설정되지 않았습니다" | `config.js` 의 `MAPTILER_KEY` 가 아직 기본값입니다. |
-| 지도가 회색으로만 나온다 | MapTiler **Allowed origins** 에 배포 주소가 없거나 오타입니다. |
-| 경로가 항상 점선 직선이다 | `ORS_KEY` 미설정이거나 일일 한도 초과(429)입니다. |
-| 한글로 검색해도 안 나온다 | 정상입니다. `data/aliases.json` 에 그 장소를 추가하거나, **[지도에서 직접 위치 지정]** 을 쓰게 안내하세요. |
-| "잠시 후 다시 검색해 주세요" | 분당 20회 상한입니다. 잠시 뒤 다시 됩니다. |
-| PDF 한글이 깨진다 | `fonts/NotoSansKR-Regular.js` 가 빠졌거나 손상됐습니다. 다시 올려 주세요. |
-| PDF 지도가 회색이다 | 타일 로딩 전에 캡처된 경우입니다. 네트워크를 확인하고 다시 저장해 보세요. |
-| 파일을 더블클릭했는데 빈 화면 | `file://` 로는 동작하지 않습니다. 2절의 로컬 서버 방법을 쓰거나 배포 주소로 접속하세요. |
+- 지도·검색·경로: **© Mapbox © OpenStreetMap** — 저작권 표시를 제거하지 마세요.
+- 한글 폰트: **Noto Sans KR** (SIL Open Font License 1.1)
+- 지도 아이콘 38종: 이 저장소에서 직접 제작
+- [mapbox-gl-js](https://github.com/mapbox/mapbox-gl-js) (Mapbox TOS), [jsPDF](https://github.com/parallax/jsPDF) (MIT)

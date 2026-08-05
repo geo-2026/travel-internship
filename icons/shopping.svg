@@ -1,5 +1,7 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24" fill="currentColor" role="img" aria-label="쇼핑">
-  <title>쇼핑</title>
-  <path fill-rule="evenodd" d="M8 8V6a4 4 0 0 1 8 0v2h-1.8V6a2.2 2.2 0 0 0-4.4 0v2z"/>
-  <path fill-rule="evenodd" d="M4 7h16l-1.2 13.2A2 2 0 0 1 16.8 22H7.2a2 2 0 0 1-2-1.8z"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 32" width="24" height="32" role="img" aria-label="shopping">
+  <path d="M12 1.2C6.62 1.2 2.26 5.56 2.26 10.94c0 6.9 8.32 18.5 8.68 18.99a1.32 1.32 0 0 0 2.12 0c.36-.49 8.68-12.09 8.68-18.99C21.74 5.56 17.38 1.2 12 1.2z" fill="currentColor" stroke="#ffffff" stroke-width="1.6" stroke-linejoin="round"/>
+  <g fill="#ffffff" transform="translate(6 5)">
+      <path d="M6 .6a2.6 2.6 0 0 1 2.6 2.6H7.2A1.2 1.2 0 0 0 4.8 3.2H3.4A2.6 2.6 0 0 1 6 .6z"/>
+      <path fill-rule="evenodd" d="M1.7 3.9h8.6l.9 7.7H.8zm2.4 1.6v1.4h3.8V5.5z"/>
+  </g>
 </svg>

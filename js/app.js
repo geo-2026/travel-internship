@@ -1,381 +1,784 @@
-// =====================================================================
-//  app.js — 진입점 · 페이지 전환 · 설정
-//
-//  · 3페이지를 한 문서 안에서 전환합니다. 지도는 파괴하지 않고 옮깁니다(§2·§10-4).
-//  · 입력값은 즉시 localStorage 에 저장되고, 재접속 시 복원 여부를 묻습니다(§2).
-// =====================================================================
+// app.js — 페이지 라우팅과 1·2·3페이지 화면 구성.
 
-import { CONFIG, HAS_MAPTILER_KEY, HAS_ORS } from "../config.js";
-import {
-  state, peekSaved, applySaved, clearAll, commit, save, setSaveArmed,
-  tripIsValid, exportJson, importJson
-} from "./storage.js";
+import { CONFIG, hasToken, isLocalPreview, initConfig, RUNTIME } from "../config.js";
+import { TYPES, TYPE_ORDER, colorOf, inlineSvg, iconLabel } from "./icons.js";
+import * as Store from "./storage.js";
 import * as MapView from "./map.js";
-import { openModal, confirmDialog, alertDialog } from "./modal.js";
-import { initPage1, validate as validatePage1 } from "./page1.js";
-import { enterPage2, leavePage2, refresh as refreshPage2 } from "./page2.js";
-import { enterPage3, leavePage3 } from "./page3.js";
-import { clearSearchCache } from "./search.js";
-import { clearRouteCache } from "./route.js";
-import { $, $$, el, toast, downloadBlob, withBusy } from "./ui.js";
+import * as Route from "./route.js";
+import { geocodeCity, debounce, RateLimitError, MIN_QUERY_LENGTH } from "./search.js";
+import { openPlacePopup, openTransportPopup } from "./placeform.js";
+import { el, toast, formatKRW, escapeHtml, openModal } from "./ui.js";
 
-/* --------------------------------------------------------------------
-   페이지 전환
-   -------------------------------------------------------------------- */
-const PAGES = {
-  intro: "#page-intro",
-  1: "#page-1",
-  2: "#page-2",
-  3: "#page-3"
-};
+let cities = [];
+let currentPage = 1;
+let mapHost = null;      // 지도 컨테이너 (앱 전체에서 하나)
+let routeState = null;   // 마지막 경로 계산 결과
 
-let current = null;
+// ── 부팅 ───────────────────────────────────────────────────────────────────
 
-async function goto(page, { push = true } = {}) {
-  if (current === page) return;
+export async function boot() {
+  // 로컬 미리보기라면 config.local.js 의 토큰으로 갈아끼운다.
+  // 지도·검색보다 먼저 끝나야 하므로 부팅 첫 줄에서 기다린다.
+  await initConfig();
 
-  // 이전 페이지 정리
-  if (current === 2) leavePage2();
-  if (current === 3) leavePage3();
-  if (page === "intro" || page === 1) MapView.detach();
+  document.title = CONFIG.APP_TITLE;
 
-  Object.values(PAGES).forEach((sel) => { const n = $(sel); if (n) n.hidden = true; });
-  const node = $(PAGES[page]);
-  if (node) node.hidden = false;
-
-  current = page;
-  if (page !== "intro") {
-    state.ui.lastPage = page;
-    state.ui.introSeen = true;
-    commit("ui");
-  }
-
-  updateChrome();
-  window.scrollTo({ top: 0, behavior: "instant" in window ? "instant" : "auto" });
-
-  if (push) {
-    const hash = page === "intro" ? "#start" : `#step${page}`;
-    if (location.hash !== hash) history.replaceState(null, "", hash);
+  const hadSaved = Store.hasSavedState();
+  Store.load();
+  if (hadSaved) {
+    const state = Store.getState();
+    const label = state.trip.title || "이전에 입력한 내용";
+    if (!confirm(`이 기기에 저장된 「${label}」이(가) 있습니다.\n이어서 작업할까요?\n\n[취소]를 누르면 저장된 내용은 그대로 두고 처음 화면부터 다시 볼 수 있습니다.`)) {
+      // 데이터를 지우지는 않는다 — 학생이 실수로 눌렀을 때 복구 가능해야 한다.
+      toast("저장된 내용은 그대로 있습니다. 입력을 이어가면 덮어써집니다.");
+    }
   }
 
   try {
-    if (page === 2) await enterPage2();
-    if (page === 3) await enterPage3();
-  } catch (e) {
-    console.error("[app] 페이지 진입 실패", e);
+    const res = await fetch("data/cities.json");
+    cities = await res.json();
+  } catch (err) {
+    console.warn("도시 목록을 읽지 못했습니다.", err);
+    cities = [];
   }
+
+  mapHost = el("div", { id: "map", class: "map-host" });
+  buildLegend();
+
+  if (!hasToken()) showTokenBanner();
+  else if (isLocalPreview() && !RUNTIME.localTokenApplied) showLocalPreviewBanner();
+
+  wireChrome();
+  renderPage1();
+  renderPage2();
+  renderPage3();
+  goTo(1, true);
 }
 
-/* --------------------------------------------------------------------
-   헤더 · 하단 바 상태
-   -------------------------------------------------------------------- */
-function updateChrome() {
-  const isIntro = current === "intro";
-  const n = isIntro ? 0 : Number(current);
+function wireChrome() {
+  document.querySelectorAll("[data-step]").forEach((btn) => {
+    btn.addEventListener("click", () => goTo(Number(btn.dataset.step)));
+  });
+  document.querySelectorAll("[data-nav]").forEach((btn) => {
+    btn.addEventListener("click", () => goTo(currentPage + Number(btn.dataset.nav)));
+  });
+  document.getElementById("btn-settings").addEventListener("click", openSettings);
+}
 
-  // 스텝 인디케이터
-  $$(".step").forEach((btn) => {
-    const target = Number(btn.dataset.goto);
-    btn.classList.toggle("is-done", n > target);
-    if (n === target) btn.setAttribute("aria-current", "step");
-    else btn.removeAttribute("aria-current");
-    // 1페이지 필수값이 없으면 2·3단계로 바로 갈 수 없습니다
-    btn.disabled = target > 1 && !tripIsValid();
+function showTokenBanner() {
+  const banner = el("div", { class: "token-banner" }, [
+    el("strong", { text: "Mapbox 토큰이 아직 설정되지 않았습니다. " }),
+    el("span", { text: "config.js 의 MAPBOX_TOKEN 한 줄을 교사 계정의 public 토큰으로 바꾸면 지도·검색·경로가 동작합니다. (README 2장 참고)" })
+  ]);
+  document.querySelector(".app-main").prepend(banner);
+}
+
+// 로컬에서 열었는데 로컬용 토큰 파일이 없을 때. 배포 주소에서는 뜨지 않는다.
+function showLocalPreviewBanner() {
+  const banner = el("div", { class: "token-banner" }, [
+    el("strong", { text: "로컬 미리보기 — 지도가 표시되지 않습니다. " }),
+    el("span", { text: "배포용 토큰은 배포 주소에서만 쓸 수 있게 잠겨 있습니다. 이 폴더에 config.local.js 를 만들고 제한 없는 테스트 토큰을 넣으면 지도가 뜹니다. (config.local.example.js 참고)" })
+  ]);
+  document.querySelector(".app-main").prepend(banner);
+}
+
+// ── 라우팅 ─────────────────────────────────────────────────────────────────
+
+function page1Complete() {
+  const t = Store.getState().trip;
+  return Boolean(t.title && t.studentId && t.studentName && t.city);
+}
+
+export function goTo(page, silent) {
+  const target = Math.min(3, Math.max(1, page));
+  if (target > 1 && !page1Complete()) {
+    if (!silent) toast("1페이지의 필수 항목을 먼저 입력해 주세요.");
+    return;
+  }
+  currentPage = target;
+
+  document.querySelectorAll(".page").forEach((sec) => {
+    sec.classList.toggle("is-active", Number(sec.dataset.page) === target);
+  });
+  document.querySelectorAll("[data-step]").forEach((btn) => {
+    const n = Number(btn.dataset.step);
+    btn.classList.toggle("is-current", n === target);
+    btn.setAttribute("aria-current", n === target ? "step" : "false");
+  });
+  updateNav();
+
+  if (target === 2) enterPage2();
+  if (target === 3) enterPage3();
+  window.scrollTo({ top: 0, behavior: "smooth" });
+}
+
+// ── 1페이지 ────────────────────────────────────────────────────────────────
+
+function renderPage1() {
+  const trip = Store.getState().trip;
+  const root = document.querySelector('[data-page="1"] .page-body');
+  root.innerHTML = "";
+
+  const mk = (label, key, opts = {}) => {
+    const input = el("input", {
+      class: "input", type: opts.type || "text", value: trip[key] || "",
+      placeholder: opts.placeholder || "", maxlength: opts.max || null,
+      inputmode: opts.inputmode || null
+    });
+    const error = el("p", { class: "field-error" });
+    input.addEventListener("input", () => {
+      trip[key] = opts.digits ? input.value.replace(/[^\d]/g, "") : input.value;
+      if (opts.digits) input.value = trip[key];
+      error.textContent = trip[key].trim() ? "" : `${label}을(를) 입력해 주세요.`;
+      Store.saveDebounced();
+      refreshPage1();
+    });
+    return el("div", { class: "field" }, [
+      el("label", { class: "field-label", text: label + " *" }),
+      input, error
+    ]);
+  };
+
+  root.append(
+    mk("여행 명칭", "title", { max: 40, placeholder: "예) 나의 오사카 미식 여행" }),
+    mk("학번", "studentId", { max: 5, placeholder: "예) 10105", inputmode: "numeric", digits: true }),
+    mk("이름", "studentName", { max: 20, placeholder: "예) 홍길동" }),
+    buildCityPicker()
+  );
+
+  root.append(
+    el("p", { class: "privacy-note", text: "입력한 내용은 사용 중인 기기에만 저장되며 서버로 전송되지 않습니다." })
+  );
+
+  refreshPage1();
+}
+
+function buildCityPicker() {
+  const trip = Store.getState().trip;
+  const wrap = el("div", { class: "field" });
+  const chosen = el("div", { class: "chosen-city" });
+  const filterInput = el("input", {
+    class: "input", type: "search", placeholder: "도시 이름을 한글로 입력해 보세요 (예: 오사카)",
+    autocomplete: "off"
+  });
+  const list = el("div", { class: "city-list", role: "listbox" });
+  const searchStatus = el("p", { class: "search-status" });
+  const searchBtn = el("button", {
+    class: "link-btn", type: "button", text: "목록에 없나요? 직접 검색하기"
   });
 
-  // 이전
-  const prev = $("#btnPrev");
-  prev.hidden = isIntro;
-  prev.disabled = false;
+  function paintChosen() {
+    chosen.innerHTML = "";
+    if (!trip.city) {
+      chosen.append(el("p", { class: "field-error", text: "도시를 선택해 주세요." }));
+      return;
+    }
+    chosen.append(
+      el("span", { class: "chip", text: `${trip.city.nameKo} · ${trip.city.country}` }),
+      el("button", {
+        class: "link-btn", type: "button", text: "변경",
+        onclick: () => { trip.city = null; Store.save(); paintChosen(); paintList(filterInput.value); refreshPage1(); }
+      })
+    );
+  }
 
-  // 다음
-  const next = $("#btnNext");
-  const foot = $(".app-foot");
-  if (isIntro) {
-    next.hidden = true;
-    foot.hidden = false;
-  } else if (n === 3) {
-    // 3페이지에는 [적용 · PDF 저장] 버튼이 따로 있습니다
-    next.hidden = true;
-    foot.hidden = false;
-  } else {
-    next.hidden = false;
-    next.textContent = "다음 →";
-    next.disabled = n === 1 && !tripIsValid();
+  function pick(city) {
+    trip.city = {
+      nameKo: city.nameKo, nameEn: city.nameEn, country: city.country,
+      center: city.center, zoom: city.zoom || 11, bbox: city.bbox
+    };
+    Store.getState().transport.isInternational = city.country !== "대한민국";
+    Store.save();
+    paintChosen();
+    paintList("");
+    filterInput.value = "";
+    refreshPage1();
+    toast(`${city.nameKo}을(를) 선택했습니다.`);
+  }
+
+  function paintList(query) {
+    list.innerHTML = "";
+    if (trip.city) return;
+    const q = (query || "").trim();
+    const matched = q
+      ? cities.filter((c) =>
+          c.nameKo.includes(q) ||
+          c.nameEn.toLowerCase().includes(q.toLowerCase()) ||
+          c.country.includes(q))
+      : cities;
+    if (!matched.length) {
+      list.append(el("p", { class: "search-status", text: "목록에 없습니다. 아래 [직접 검색하기]를 눌러 보세요." }));
+      return;
+    }
+    matched.slice(0, 60).forEach((c) => {
+      const btn = el("button", { class: "city-item", type: "button", role: "option" }, [
+        el("span", { class: "city-name", text: c.nameKo }),
+        el("span", { class: "city-country", text: c.country })
+      ]);
+      btn.addEventListener("click", () => pick(c));
+      list.appendChild(btn);
+    });
+  }
+
+  filterInput.addEventListener("input", () => paintList(filterInput.value));
+
+  // 내장 목록에 없을 때만 네트워크를 쓴다(§4-1).
+  const runSearch = debounce(async (q) => {
+    searchStatus.textContent = "검색 중…";
+    try {
+      const results = await geocodeCity(q);
+      list.innerHTML = "";
+      if (!results.length) {
+        searchStatus.textContent = "검색 결과가 없습니다. 철자를 바꿔 보세요.";
+        return;
+      }
+      searchStatus.textContent = "";
+      results.forEach((c) => {
+        const btn = el("button", { class: "city-item", type: "button", role: "option" }, [
+          el("span", { class: "city-name", text: c.nameKo }),
+          el("span", { class: "city-country", text: c.country || c.placeName })
+        ]);
+        btn.addEventListener("click", () => pick(c));
+        list.appendChild(btn);
+      });
+    } catch (err) {
+      searchStatus.textContent = err instanceof RateLimitError
+        ? "잠시 후 다시 검색해 주세요."
+        : "검색에 실패했습니다. 잠시 후 다시 시도해 주세요.";
+    }
+  });
+
+  let searchMode = false;
+  searchBtn.addEventListener("click", () => {
+    searchMode = !searchMode;
+    searchBtn.textContent = searchMode ? "내장 도시 목록으로 돌아가기" : "목록에 없나요? 직접 검색하기";
+    filterInput.placeholder = searchMode
+      ? "검색할 도시 이름 (두 글자 이상)"
+      : "도시 이름을 한글로 입력해 보세요 (예: 오사카)";
+    filterInput.value = "";
+    searchStatus.textContent = "";
+    paintList("");
+    filterInput.focus();
+  });
+
+  filterInput.addEventListener("input", () => {
+    if (!searchMode) return;
+    const q = filterInput.value.trim();
+    if (q.length < MIN_QUERY_LENGTH) {
+      searchStatus.textContent = q.length ? "두 글자 이상 입력해 주세요." : "";
+      return;
+    }
+    runSearch(q);
+  });
+
+  wrap.append(
+    el("label", { class: "field-label", text: "여행할 도시 *" }),
+    chosen, filterInput, searchStatus, list, searchBtn
+  );
+  paintChosen();
+  paintList("");
+  return wrap;
+}
+
+/** 하단 이동 버튼 상태 — 1페이지 필수값이 비면 [다음]을 막는다(§4). */
+function updateNav() {
+  document.querySelector('[data-nav="-1"]').disabled = currentPage === 1;
+  document.querySelector('[data-nav="1"]').disabled =
+    currentPage === 3 || (currentPage === 1 && !page1Complete());
+}
+
+function refreshPage1() {
+  updateNav();
+}
+
+// ── 2페이지 ────────────────────────────────────────────────────────────────
+
+function renderPage2() {
+  const root = document.querySelector('[data-page="2"] .page-body');
+  root.innerHTML = "";
+
+  const mapSlot = el("div", { class: "map-slot", id: "map-slot-2" });
+  const toolbar = el("div", { class: "type-toolbar", id: "type-toolbar" });
+  const cardList = el("div", { class: "card-list", id: "card-list" });
+
+  root.append(
+    mapSlot,
+    el("p", { class: "map-hint", text: "지도를 길게 누르면 검색 없이 위치를 직접 지정할 수 있습니다. 한글 라벨이 없는 지역은 현지어로 표시되는 것이 정상입니다." }),
+    toolbar,
+    cardList
+  );
+}
+
+async function enterPage2() {
+  const state = Store.getState();
+  const slot = document.getElementById("map-slot-2");
+  slot.appendChild(mapHost);
+  paintToolbar();
+  paintCards();
+
+  try {
+    await MapView.ensureMap(mapHost, state.trip.city);
+  } catch (err) {
+    console.error(err);
+    toast("지도를 불러오지 못했습니다. 네트워크를 확인해 주세요.");
+    return;
+  }
+  MapView.attachTo(slot);
+  MapView.setPlaceClickHandler(handleMarkerClick);
+  await MapView.whenReady();
+  await MapView.renderPlaces(state.places, false);
+  MapView.renderRoute(null, false);
+}
+
+function paintToolbar() {
+  const state = Store.getState();
+  const bar = document.getElementById("type-toolbar");
+  bar.innerHTML = "";
+
+  const transportBtn = el("button", { class: "tool-btn tool-transport", type: "button" }, [
+    el("span", { text: "이동방법" }),
+    state.transport.localModes.length || state.transport.cautions || state.transport.flightCostKRW
+      ? el("span", { class: "badge badge-check", text: "✓" })
+      : null
+  ]);
+  transportBtn.addEventListener("click", () => openTransportPopup(() => { paintToolbar(); }));
+  bar.appendChild(transportBtn);
+
+  const full = state.places.length >= CONFIG.MAX_PLACES;
+  TYPE_ORDER.forEach((type) => {
+    const def = TYPES[type];
+    const count = state.places.filter((p) => p.type === type).length;
+    const btn = el("button", {
+      class: "tool-btn", type: "button", disabled: full || null,
+      style: `--type-color:${colorOf(type, "base")}`
+    }, [
+      el("span", { class: "tool-dot" }),
+      el("span", { text: `+ ${def.label}` }),
+      count ? el("span", { class: "badge", text: String(count) }) : null
+    ]);
+    btn.addEventListener("click", () => {
+      openPlacePopup(type, null, afterPlacesChanged);
+    });
+    bar.appendChild(btn);
+  });
+
+  if (full) {
+    bar.appendChild(el("p", {
+      class: "field-hint",
+      text: `방문지는 최대 ${CONFIG.MAX_PLACES}곳까지 등록할 수 있습니다. (경로 계산 API 의 경유지 제약)`
+    }));
   }
 }
 
-/* --------------------------------------------------------------------
-   앞뒤 이동
-   -------------------------------------------------------------------- */
-async function goNext() {
-  if (current === "intro") { await goto(1); return; }
+async function paintCards() {
+  const state = Store.getState();
+  const host = document.getElementById("card-list");
+  host.innerHTML = "";
 
-  if (current === 1) {
-    if (!validatePage1(true)) {
-      toast("필수 항목을 모두 입력해 주세요.", "err");
-      return;
-    }
-    await goto(2);
+  if (!state.places.length) {
+    host.append(el("p", {
+      class: "empty-note",
+      text: "아직 등록한 방문지가 없습니다. 위 버튼으로 숙소·관광명소·맛집·엑티비티를 추가해 보세요."
+    }));
     return;
   }
 
-  if (current === 2) {
-    if (state.places.length === 0) {
-      const ok = await confirmDialog({
-        title: "방문지가 없습니다",
-        message: "방문할 장소를 하나도 추가하지 않았습니다. 그래도 다음 단계로 갈까요?",
-        okText: "다음으로"
-      });
-      if (!ok) return;
+  for (const type of TYPE_ORDER) {
+    const def = TYPES[type];
+    const items = state.places.filter((p) => p.type === type);
+    if (!items.length) continue;
+
+    const group = el("section", { class: "card-group" });
+    group.append(el("h3", { class: "card-group-title" }, [
+      el("span", { class: "group-dot", style: `background:${colorOf(type, "base")}` }),
+      el("span", { text: `${def.label} (${items.length})` })
+    ]));
+
+    for (const p of items) {
+      const svg = await inlineSvg(p.icon, colorOf(p.type, p.shade || "base"));
+      const card = el("article", { class: "place-card" }, [
+        el("span", { class: "place-icon", html: svg }),
+        el("div", { class: "place-main" }, [
+          el("p", { class: "place-name", text: p.name }),
+          el("p", { class: "place-sub", text: `${iconLabel(p.type, p.icon)} · ${formatKRW(p.priceKRW)}원` })
+        ]),
+        el("div", { class: "place-actions" }, [
+          el("button", {
+            class: "btn btn-ghost btn-sm", type: "button", text: "수정",
+            onclick: () => openPlacePopup(p.type, p, afterPlacesChanged)
+          }),
+          el("button", {
+            class: "btn btn-ghost btn-sm btn-danger", type: "button", text: "삭제",
+            onclick: () => {
+              if (!confirm(`「${p.name}」을(를) 삭제할까요?`)) return;
+              Store.removePlace(p.id);
+              afterPlacesChanged();
+              toast("삭제했습니다.");
+            }
+          })
+        ])
+      ]);
+      group.appendChild(card);
     }
-    await goto(3);
+    host.appendChild(group);
   }
 }
 
-async function goPrev() {
-  if (current === 1) { await goto("intro"); return; }
-  if (current === 2) { await goto(1); return; }
-  if (current === 3) { await goto(2); return; }
+function afterPlacesChanged() {
+  const state = Store.getState();
+  paintToolbar();
+  paintCards();
+  MapView.renderPlaces(state.places, currentPage === 3);
+  if (state.places.length) {
+    const last = state.places[state.places.length - 1];
+    if (currentPage === 2) MapView.flyTo(last.coord);
+  }
+  if (currentPage === 3) {
+    paintOrderList();
+    recomputeRoute();
+  }
 }
 
-/* --------------------------------------------------------------------
-   설정 (§11 · §13)
-   -------------------------------------------------------------------- */
+async function handleMarkerClick(placeId, lngLat) {
+  const place = Store.getState().places.find((p) => p.id === placeId);
+  if (!place) return;
+  const svg = await inlineSvg(place.icon, colorOf(place.type, place.shade || "base"));
+  const html = `
+    <div class="marker-popup">
+      <div class="marker-popup-head">
+        <span class="marker-popup-icon">${svg}</span>
+        <div>
+          <p class="marker-popup-name">${escapeHtml(place.name)}</p>
+          <p class="marker-popup-meta">${escapeHtml(TYPES[place.type].label)} · ${formatKRW(place.priceKRW)}원</p>
+        </div>
+      </div>
+      <button type="button" class="btn btn-ghost btn-sm" data-edit="${escapeHtml(place.id)}">수정</button>
+    </div>`;
+  const popup = MapView.popupAt(lngLat, html);
+  setTimeout(() => {
+    const btn = document.querySelector(`[data-edit="${CSS.escape(place.id)}"]`);
+    if (btn) btn.addEventListener("click", () => {
+      popup.remove();
+      openPlacePopup(place.type, place, afterPlacesChanged);
+    });
+  }, 0);
+}
+
+// ── 범례 ───────────────────────────────────────────────────────────────────
+
+function buildLegend() {
+  const legend = el("div", { class: "legend", id: "legend" });
+  const toggle = el("button", {
+    class: "legend-toggle", type: "button", "aria-expanded": "true", text: "범례 ▾"
+  });
+  const body = el("div", { class: "legend-body" });
+  TYPE_ORDER.forEach((type) => {
+    body.append(el("div", { class: "legend-row" }, [
+      el("span", { class: "legend-dot", style: `background:${colorOf(type, "base")}` }),
+      el("span", { text: TYPES[type].label })
+    ]));
+  });
+  toggle.addEventListener("click", () => {
+    const open = legend.classList.toggle("is-collapsed");
+    toggle.setAttribute("aria-expanded", open ? "false" : "true");
+    toggle.textContent = open ? "범례 ▸" : "범례 ▾";
+  });
+  legend.append(toggle, body);
+  mapHost.appendChild(legend);
+}
+
+// ── 3페이지 ────────────────────────────────────────────────────────────────
+
+function renderPage3() {
+  const root = document.querySelector('[data-page="3"] .page-body');
+  root.innerHTML = "";
+  root.append(
+    el("div", { class: "map-slot", id: "map-slot-3" }),
+    el("p", { class: "map-hint", id: "transit-notice" }),
+    el("div", { class: "summary", id: "summary" }),
+    el("div", { class: "order-list", id: "order-list" }),
+    el("div", { class: "apply-row" }, [
+      el("button", {
+        class: "btn btn-primary btn-lg", type: "button", id: "btn-apply",
+        text: "적용 · PDF 저장"
+      }),
+      el("p", { class: "field-hint", text: "PDF 파일은 이 기기의 다운로드 폴더에 저장됩니다." })
+    ])
+  );
+  document.getElementById("btn-apply").addEventListener("click", handleApply);
+}
+
+async function enterPage3() {
+  const state = Store.getState();
+  const slot = document.getElementById("map-slot-3");
+  slot.appendChild(mapHost);
+  paintOrderList();
+  paintSummary();
+  recomputeRoute(0);
+
+  try {
+    await MapView.ensureMap(mapHost, state.trip.city);
+  } catch (err) {
+    console.error(err);
+    return;
+  }
+  MapView.attachTo(slot);
+  MapView.setLongPressEnabled(false);
+  await MapView.whenReady();
+  await MapView.renderPlaces(state.places, true);
+  MapView.fitToPlaces(state.places);
+}
+
+/** 경로 요약 문구. 경로 API 가 실패했을 때는 직선 근사임을 분명히 밝힌다. */
+function describeRoute(r) {
+  if (!r) return "계산 중…";
+  if (r.fallback) return `${Route.formatDistance(r.distanceM)} (직선 기준 근사)`;
+  return `${Route.formatDistance(r.distanceM)} / ${Route.formatDuration(r.durationS)}`;
+}
+
+function paintSummary() {
+  const state = Store.getState();
+  const host = document.getElementById("summary");
+  const t = state.transport;
+  const rows = [];
+
+  if (t.isInternational) {
+    rows.push(["왕복 항공료", `${formatKRW(t.flightCostKRW)}원`]);
+  }
+  rows.push(["총 이용 비용", `${formatKRW(Store.totalPlaceCost())}원 (항공료 제외)`]);
+  rows.push(["총 이동 거리", describeRoute(routeState)]);
+
+  host.innerHTML = "";
+  rows.forEach(([label, value]) => {
+    host.append(el("div", { class: "summary-row" }, [
+      el("span", { class: "summary-label", text: label }),
+      el("span", { class: "summary-value", text: value })
+    ]));
+  });
+
+  const notice = document.getElementById("transit-notice");
+  notice.textContent = Route.needsTransitNotice(t.localModes)
+    ? `※ ${Route.TRANSIT_NOTICE} — Mapbox 경로 API 에는 대중교통 전용 경로가 없어 자동차 경로로 근사했습니다. 실제 지하철·버스 노선과 다릅니다.`
+    : "";
+  notice.classList.toggle("is-warn", Boolean(notice.textContent));
+}
+
+function paintOrderList() {
+  const state = Store.getState();
+  const host = document.getElementById("order-list");
+  host.innerHTML = "";
+
+  if (!state.places.length) {
+    host.append(el("p", { class: "empty-note", text: "2페이지에서 방문지를 먼저 추가해 주세요." }));
+    return;
+  }
+
+  state.places.forEach((p, index) => {
+    const row = el("div", {
+      class: "order-row", "data-id": p.id, draggable: "false"
+    });
+
+    const handle = el("button", {
+      class: "drag-handle", type: "button", "aria-label": `${p.name} 순서 옮기기`, text: "☰"
+    });
+
+    const select = el("select", { class: "order-select", "aria-label": `${p.name} 방문 순서` });
+    state.places.forEach((_, i) => {
+      select.appendChild(el("option", { value: String(i + 1), text: `${i + 1}번째` }));
+    });
+    select.value = String(index + 1);
+    select.addEventListener("change", () => moveTo(p.id, Number(select.value) - 1));
+
+    row.append(
+      handle,
+      el("span", {
+        class: "order-num",
+        style: `background:${colorOf(p.type, p.shade || "base")}`,
+        text: String(index + 1)
+      }),
+      el("div", { class: "order-main" }, [
+        el("p", { class: "place-name", text: p.name }),
+        el("p", { class: "place-sub", text: `${TYPES[p.type].label} · ${formatKRW(p.priceKRW)}원` })
+      ]),
+      el("div", { class: "order-actions" }, [
+        el("button", {
+          class: "btn btn-ghost btn-sm", type: "button", text: "▲", "aria-label": "위로",
+          disabled: index === 0 || null,
+          onclick: () => moveTo(p.id, index - 1)
+        }),
+        el("button", {
+          class: "btn btn-ghost btn-sm", type: "button", text: "▼", "aria-label": "아래로",
+          disabled: index === state.places.length - 1 || null,
+          onclick: () => moveTo(p.id, index + 1)
+        }),
+        select
+      ])
+    );
+
+    installDrag(row, handle, host);
+    host.appendChild(row);
+  });
+}
+
+function moveTo(id, targetIndex) {
+  const state = Store.getState();
+  const ids = state.places.map((p) => p.id);
+  const from = ids.indexOf(id);
+  if (from < 0) return;
+  const clamped = Math.min(state.places.length - 1, Math.max(0, targetIndex));
+  ids.splice(clamped, 0, ids.splice(from, 1)[0]);
+  Store.reorderPlaces(ids);
+  afterOrderChanged();
+}
+
+/** 포인터 기반 드래그 — 마우스와 터치를 함께 지원한다(§7). */
+function installDrag(row, handle, host) {
+  let dragging = false;
+
+  handle.addEventListener("pointerdown", (e) => {
+    e.preventDefault();
+    dragging = true;
+    handle.setPointerCapture(e.pointerId);
+    row.classList.add("is-dragging");
+  });
+
+  handle.addEventListener("pointermove", (e) => {
+    if (!dragging) return;
+    const rows = Array.from(host.querySelectorAll(".order-row"));
+    const target = rows.find((r) => {
+      if (r === row) return false;
+      const rect = r.getBoundingClientRect();
+      return e.clientY >= rect.top && e.clientY <= rect.bottom;
+    });
+    if (!target) return;
+    const rect = target.getBoundingClientRect();
+    const after = e.clientY > rect.top + rect.height / 2;
+    host.insertBefore(row, after ? target.nextSibling : target);
+  });
+
+  const end = () => {
+    if (!dragging) return;
+    dragging = false;
+    row.classList.remove("is-dragging");
+    const ids = Array.from(host.querySelectorAll(".order-row")).map((r) => r.dataset.id);
+    Store.reorderPlaces(ids);
+    afterOrderChanged();
+  };
+  handle.addEventListener("pointerup", end);
+  handle.addEventListener("pointercancel", end);
+}
+
+function afterOrderChanged() {
+  const state = Store.getState();
+  paintOrderList();
+  paintSummary();
+  MapView.renderPlaces(state.places, true);
+  recomputeRoute();
+}
+
+function recomputeRoute(delay) {
+  const state = Store.getState();
+  if (state.places.length < 2) {
+    routeState = { distanceM: 0, durationS: 0, geometry: null, fallback: false };
+    state.route = null;
+    Store.save();
+    MapView.renderRoute(null, false);
+    paintSummary();
+    return;
+  }
+  Route.scheduleRoute(state.places, state.transport.localModes, (result) => {
+    routeState = result;
+    state.route = {
+      profile: result.profile,
+      distanceM: result.distanceM,
+      durationS: result.durationS,
+      fallback: result.fallback,
+      geometry: result.geometry
+    };
+    Store.save();
+    MapView.renderRoute(result.geometry, result.fallback);
+    paintSummary();
+    if (result.fallback) toast("경로를 불러오지 못해 직선으로 표시했습니다.");
+  }, delay == null ? 800 : delay);
+}
+
+// ── 적용 · PDF ─────────────────────────────────────────────────────────────
+
+async function handleApply() {
+  const state = Store.getState();
+  if (!state.places.length) {
+    toast("방문지를 한 곳 이상 등록해 주세요.");
+    return;
+  }
+  const btn = document.getElementById("btn-apply");
+  btn.disabled = true;
+  const original = btn.textContent;
+  btn.textContent = "PDF 만드는 중…";
+
+  try {
+    // jsPDF 와 한글 폰트는 이 시점에 처음 내려받는다(§12).
+    const { generatePdf } = await import("./pdf.js");
+    await generatePdf(state, routeState);
+    toast("PDF를 저장했습니다. 수정하려면 이전 버튼으로 돌아갈 수 있습니다.", 4000);
+  } catch (err) {
+    console.error(err);
+    alert("PDF를 만들지 못했습니다.\n" + (err && err.message ? err.message : ""));
+  } finally {
+    btn.disabled = false;
+    btn.textContent = original;
+  }
+}
+
+// ── 설정 ───────────────────────────────────────────────────────────────────
+
 function openSettings() {
-  openModal({
-    title: "설정",
-    showApply: false,
-    closeText: "닫기",
-
-    render(body) {
-      const list = el("div", { class: "settings-list" });
-
-      // 계획 내보내기
-      const exp = el("button", { class: "btn", type: "button", text: "📤  계획 내보내기 (JSON)" });
-      exp.addEventListener("click", () => {
-        const blob = new Blob([exportJson()], { type: "application/json;charset=utf-8" });
-        const id = String(state.trip.studentId || "student").replace(/[^0-9A-Za-z]/g, "") || "student";
-        downloadBlob(blob, `travel_internship_${id}.json`);
-        toast("계획 파일을 내려받았습니다.", "ok");
-      });
-      list.appendChild(exp);
-
-      // 계획 불러오기
-      const file = el("input", { type: "file", accept: "application/json,.json", style: { display: "none" } });
-      const imp = el("button", { class: "btn", type: "button", text: "📥  계획 불러오기 (JSON)" });
-      imp.addEventListener("click", () => file.click());
-      file.addEventListener("change", async () => {
-        const f = file.files && file.files[0];
-        if (!f) return;
-        try {
-          const text = await f.text();
-          importJson(text);
-          save();
-          clearRouteCache();
-          toast("계획을 불러왔습니다.", "ok");
-          await reloadAll();
-        } catch (e) {
-          console.error(e);
-          await alertDialog({
-            title: "불러오지 못했습니다",
-            message: "이 앱에서 내보낸 JSON 파일인지 확인해 주세요."
+  const body = el("div", { class: "place-form" }, [
+    el("p", { class: "field-hint", text: "입력한 내용은 이 기기에만 저장됩니다. 공용 기기를 쓴다면 수업이 끝난 뒤 [입력 내용 전체 삭제]를 눌러 주세요." }),
+    el("div", { class: "settings-row" }, [
+      el("button", {
+        class: "btn btn-ghost", type: "button", text: "계획 내보내기 (JSON)",
+        onclick: () => {
+          const blob = new Blob([Store.exportJSON()], { type: "application/json" });
+          const a = el("a", {
+            href: URL.createObjectURL(blob),
+            download: `travel_internship_${Store.getState().trip.studentId || "plan"}.json`
           });
-        } finally {
-          file.value = "";
+          document.body.appendChild(a);
+          a.click();
+          a.remove();
+          toast("계획 파일을 저장했습니다.");
         }
-      });
-      list.appendChild(imp);
-      list.appendChild(file);
-
-      // 전체 삭제
-      const del = el("button", { class: "btn btn--danger", type: "button", text: "🗑  입력 내용 전체 삭제" });
-      del.addEventListener("click", async () => {
-        const ok = await confirmDialog({
-          title: "전체 삭제할까요?",
-          message: "여행 정보와 방문지가 모두 지워집니다. 되돌릴 수 없습니다.",
-          okText: "전체 삭제",
-          danger: true
-        });
-        if (!ok) return;
-        clearAll();
-        clearSearchCache();
-        clearRouteCache();
-        toast("모두 지웠습니다.");
-        await reloadAll();
-        await goto("intro");
-      });
-      list.appendChild(del);
-
-      body.appendChild(list);
-
-      // 안내
-      body.appendChild(el("p", {
-        class: "settings-note",
-        html:
-          "· 입력한 내용은 <b>이 기기에만</b> 저장되며 서버로 전송되지 않습니다.<br>" +
-          "· 학번·이름·여행 명칭은 어떤 외부 서비스에도 보내지 않습니다.<br>" +
-          "· 공용 크롬북을 썼다면 수업이 끝난 뒤 [전체 삭제]를 눌러 주세요.<br>" +
-          "· 기기를 바꿔 이어서 작업하려면 [계획 내보내기]로 파일을 저장해 두세요."
-      }));
-
-      // 상태 (키 값 자체는 절대 표시하지 않습니다 — §10-5)
-      body.appendChild(el("p", {
-        class: "settings-note",
-        html:
-          `<b>연결 상태</b><br>` +
-          `· 지도(MapTiler) : ${HAS_MAPTILER_KEY ? "설정됨" : "<b>키 미설정 — 데모 모드</b>"}<br>` +
-          `· 경로(ORS) : ${HAS_ORS ? "설정됨" : "<b>키 미설정 — 직선으로 표시</b>"}<br>` +
-          `· 장소 검색(Photon) : 키 없이 사용<br>` +
-          `· 방문지 상한 : ${CONFIG.MAX_PLACES}곳`
-      }));
-
-      body.appendChild(el("p", {
-        class: "settings-note",
-        text: ATTRIBUTION_TEXT
-      }));
-    }
-  });
-}
-
-const ATTRIBUTION_TEXT =
-  "지도 데이터 © MapTiler © OpenStreetMap contributors · 경로 © openrouteservice · 검색 © Photon (OpenStreetMap)";
-
-/* --------------------------------------------------------------------
-   전체 다시 그리기 (불러오기·삭제 후)
-   -------------------------------------------------------------------- */
-async function reloadAll() {
-  // 1페이지 입력칸
-  $("#inTitle").value = state.trip.title;
-  $("#inStudentId").value = state.trip.studentId;
-  $("#inStudentName").value = state.trip.studentName;
-  $("#titleCount").textContent = String(state.trip.title.length);
-
-  const picked = $("#cityPicked");
-  const box = $(".citybox");
-  if (state.trip.city) {
-    picked.hidden = false;
-    box.hidden = true;
-    $("#cityPickedName").textContent =
-      `${state.trip.city.nameKo}` +
-      (state.trip.city.nameEn ? ` (${state.trip.city.nameEn})` : "") +
-      (state.trip.city.country ? ` · ${state.trip.city.country}` : "");
-  } else {
-    picked.hidden = true;
-    box.hidden = false;
-  }
-
-  validatePage1(false);
-  updateChrome();
-
-  if (MapView.mapExists()) {
-    await MapView.setPlaces(state.places, { numbers: current === 3 });
-    MapView.renderLegend(state.places, { numbers: current === 3 });
-    MapView.setRoute(state.route && state.route.geometry, {
-      dashed: !!(state.route && state.route.straight)
-    });
-  }
-  if (current === 2) await refreshPage2();
-  if (current === 3) await enterPage3();
-}
-
-/* --------------------------------------------------------------------
-   저장된 내용 복원 (§2)
-   -------------------------------------------------------------------- */
-async function restoreIfAny() {
-  const saved = peekSaved();
-  if (!saved) return null;
-
-  const meaningful =
-    (saved.trip && (saved.trip.title || saved.trip.studentName || saved.trip.city)) ||
-    (saved.places && saved.places.length > 0);
-  if (!meaningful) return null;
-
-  const bits = [];
-  if (saved.trip.title) bits.push(`"${saved.trip.title}"`);
-  if (saved.trip.city) bits.push(saved.trip.city.nameKo);
-  if (saved.places.length) bits.push(`방문지 ${saved.places.length}곳`);
-
-  const ok = await confirmDialog({
-    title: "이어서 작업할까요?",
-    message: `이 기기에 저장된 내용이 있습니다.\n${bits.join(" · ")}\n\n[이어서 하기]를 누르면 마지막 상태에서 계속합니다.`,
-    okText: "이어서 하기",
-    cancelText: "새로 시작"
-  });
-
-  if (ok) {
-    applySaved(saved);
-    return saved.ui && saved.ui.lastPage ? saved.ui.lastPage : 1;
-  }
-
-  // clearAll() 이 저장 항목까지 지우므로 따로 save() 하지 않습니다
-  clearAll();
-  return null;
-}
-
-/* --------------------------------------------------------------------
-   시작
-   -------------------------------------------------------------------- */
-async function main() {
-  // 복원 여부를 학생이 정하기 전까지는 저장하지 않습니다.
-  // (확인창에 답하기 전에 탭을 닫아도 기존 계획이 지워지지 않게)
-  setSaveArmed(false);
-
-  document.title = CONFIG.APP_TITLE;
-  $(".logo").textContent = CONFIG.APP_TITLE;
-  $("#attribution").textContent = ATTRIBUTION_TEXT;
-
-  // 버튼 연결
-  $("#btnStart").addEventListener("click", () => goto(1));
-  $("#btnNext").addEventListener("click", goNext);
-  $("#btnPrev").addEventListener("click", goPrev);
-  $("#btnSettings").addEventListener("click", openSettings);
-
-  $$(".step").forEach((btn) => {
-    btn.addEventListener("click", async () => {
-      const target = Number(btn.dataset.goto);
-      if (target > 1 && !tripIsValid()) {
-        toast("1단계의 필수 항목을 먼저 입력해 주세요.", "err");
-        await goto(1);
-        validatePage1(true);
-        return;
+      }),
+      el("label", { class: "btn btn-ghost file-btn" }, [
+        el("span", { text: "계획 불러오기 (JSON)" }),
+        el("input", {
+          type: "file", accept: "application/json,.json", hidden: true,
+          onchange: async (e) => {
+            const file = e.target.files && e.target.files[0];
+            if (!file) return;
+            try {
+              Store.importJSON(await file.text());
+              toast("계획을 불러왔습니다.");
+              location.reload();
+            } catch (err) {
+              alert("불러오지 못했습니다.\n" + err.message);
+            }
+          }
+        })
+      ])
+    ]),
+    el("hr", { class: "divider" }),
+    el("button", {
+      class: "btn btn-danger", type: "button", text: "입력 내용 전체 삭제",
+      onclick: () => {
+        if (!confirm("이 기기에 저장된 여행 계획을 모두 지웁니다.\n되돌릴 수 없습니다. 계속할까요?")) return;
+        Store.clearAll();
+        location.reload();
       }
-      await goto(target);
-    });
-  });
+    }),
+    el("hr", { class: "divider" }),
+    el("p", { class: "field-hint", text: "지도 데이터 © Mapbox © OpenStreetMap" })
+  ]);
 
-  // 1페이지 준비 (도시 목록 로드 포함)
-  await initPage1(() => updateChrome());
-
-  // 저장된 내용 복원 — 답을 받은 뒤부터 저장을 켭니다
-  let startPage = await restoreIfAny();
-  setSaveArmed(true);
-
-  if (startPage) {
-    await reloadAll();
-    // 1페이지 필수값이 비어 있으면 2·3단계로 보내지 않습니다
-    if (startPage > 1 && !tripIsValid()) startPage = 1;
-  }
-
-  await goto(startPage || (state.ui.introSeen ? 1 : "intro"), { push: true });
-
-  // 키가 없으면 한 번만 알려 줍니다 (학생 화면에서는 교사가 키를 넣어 두므로 보이지 않습니다)
-  if (!HAS_MAPTILER_KEY) {
-    console.warn("[app] MapTiler 키가 설정되지 않아 데모 모드로 실행합니다. config.js 를 확인하세요.");
-  }
-
-  // 창을 닫기 전에 저장을 확정합니다
-  window.addEventListener("pagehide", () => save());
-  document.addEventListener("visibilitychange", () => {
-    if (document.visibilityState === "hidden") save();
-  });
+  openModal({ title: "설정", body, applyLabel: null, closeLabel: "닫기" });
 }
-
-main().catch(async (e) => {
-  console.error("[app] 시작 실패", e);
-  await alertDialog({
-    title: "앱을 시작하지 못했습니다",
-    message: (e && e.message ? e.message : "알 수 없는 오류") +
-             "\n\n페이지를 새로고침해 주세요. 계속되면 선생님께 알려 주세요."
-  });
-});

@@ -1,4 +1,7 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24" fill="currentColor" role="img" aria-label="공원">
-  <title>공원</title>
-  <path fill-rule="evenodd" d="M12 2 5 12h4l-4 6h6v4h2v-4h6l-4-6h4z"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 32" width="24" height="32" role="img" aria-label="park">
+  <path d="M12 1.2C6.62 1.2 2.26 5.56 2.26 10.94c0 6.9 8.32 18.5 8.68 18.99a1.32 1.32 0 0 0 2.12 0c.36-.49 8.68-12.09 8.68-18.99C21.74 5.56 17.38 1.2 12 1.2z" fill="currentColor" stroke="#ffffff" stroke-width="1.6" stroke-linejoin="round"/>
+  <g fill="#ffffff" transform="translate(6 5)">
+      <path d="M6 .8 2.1 6.5h1.95L1.1 10.2h9.8L7.95 6.5H9.9z"/>
+      <rect x="5.2" y="9.6" width="1.6" height="2.1" rx=".35"/>
+  </g>
 </svg>

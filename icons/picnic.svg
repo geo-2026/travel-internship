@@ -1,5 +1,7 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24" fill="currentColor" role="img" aria-label="소풍">
-  <title>소풍</title>
-  <path fill-rule="evenodd" d="M12 3a6 6 0 0 1 6 6h-1.9A4.1 4.1 0 0 0 12 4.9 4.1 4.1 0 0 0 7.9 9H6a6 6 0 0 1 6-6z"/>
-  <path fill-rule="evenodd" d="M3 9.8h18l-1.6 10A2 2 0 0 1 17.4 21H6.6a2 2 0 0 1-2-1.2zM8.4 11.4h1.6l.6 8h-1.6zM14 11.4h1.6l-.6 8h-1.6z"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 32" width="24" height="32" role="img" aria-label="picnic">
+  <path d="M12 1.2C6.62 1.2 2.26 5.56 2.26 10.94c0 6.9 8.32 18.5 8.68 18.99a1.32 1.32 0 0 0 2.12 0c.36-.49 8.68-12.09 8.68-18.99C21.74 5.56 17.38 1.2 12 1.2z" fill="currentColor" stroke="#ffffff" stroke-width="1.6" stroke-linejoin="round"/>
+  <g fill="#ffffff" transform="translate(6 5)">
+      <path fill="none" stroke="#fff" stroke-width="1.15" d="M3.3 4.6a2.7 2.7 0 0 1 5.4 0"/>
+      <path fill-rule="evenodd" d="M.7 5.2h10.6l-1 6.4H1.7zm4.6 1.5v3.4h1.4V6.7z"/>
+  </g>
 </svg>

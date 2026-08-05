@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<title>Travel Internship — 아이콘 미리보기</title>
+<style>
+  body { font-family: 'Malgun Gothic', sans-serif; background:#fff; margin:0; padding:16px; }
+  h2 { font-size:15px; margin:18px 0 8px; }
+  .row { display:flex; flex-wrap:wrap; gap:10px; }
+  .cell { width:74px; text-align:center; }
+  .cell svg { width:38px; height:50px; display:block; margin:0 auto; }
+  .cap { font-size:10px; color:#444; margin-top:2px; word-break:keep-all; }
+</style>
+</head>
+<body>
+<div id="out">불러오는 중…</div>
+<script type="module">
+import { TYPES, TYPE_ORDER, colorOf } from "../js/icons.js";
+const out = document.getElementById("out");
+out.innerHTML = "";
+for (const type of TYPE_ORDER) {
+  const def = TYPES[type];
+  const h = document.createElement("h2");
+  h.textContent = `${def.label} (${def.icons.length})`;
+  const row = document.createElement("div");
+  row.className = "row";
+  for (const [name, label] of def.icons) {
+    const svg = await fetch(`../icons/${name}.svg`).then(r => r.text());
+    const cell = document.createElement("div");
+    cell.className = "cell";
+    cell.innerHTML = svg.replace(/currentColor/g, colorOf(type, "base")) +
+      `<div class="cap">${label}<br><span style="color:#999">${name}</span></div>`;
+    row.appendChild(cell);
+  }
+  out.append(h, row);
+}
+document.body.dataset.ready = "1";
+</script>
+</body>
+</html>

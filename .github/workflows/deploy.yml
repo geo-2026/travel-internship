@@ -1,0 +1,78 @@
+# GitHub Pages 배포.
+#
+# 저장소에는 Mapbox 토큰을 두지 않습니다. 배포할 때 이 워크플로가
+# 저장소 비밀값 MAPBOX_TOKEN 을 config.js 에 끼워 넣어 올립니다.
+#
+# 토큰 교체: Settings → Secrets and variables → Actions → MAPBOX_TOKEN 수정
+#            → Actions 탭 → Deploy to GitHub Pages → Run workflow
+
+name: Deploy to GitHub Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# 배포는 한 번에 하나만. 진행 중인 것이 있으면 최신 것으로 대체한다.
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: 소스 받기
+        uses: actions/checkout@v4
+
+      - name: config.js 에 Mapbox 토큰 끼워 넣기
+        env:
+          MAPBOX_TOKEN: ${{ secrets.MAPBOX_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "${MAPBOX_TOKEN:-}" ]; then
+            echo "::error::MAPBOX_TOKEN 비밀값이 비어 있습니다. Settings → Secrets and variables → Actions 에서 등록하세요."
+            exit 1
+          fi
+
+          case "$MAPBOX_TOKEN" in
+            pk.*) ;;
+            *) echo "::error::public 토큰(pk. 로 시작)만 쓸 수 있습니다. sk. 토큰은 절대 넣지 마세요."; exit 1 ;;
+          esac
+
+          sed -i "s|MAPBOX_TOKEN: \"[^\"]*\"|MAPBOX_TOKEN: \"${MAPBOX_TOKEN}\"|" config.js
+
+          # 치환이 실제로 됐는지 확인 — 실패한 채로 배포되면 학생 화면에서 지도가 죽는다.
+          if ! grep -q 'MAPBOX_TOKEN: "pk\.' config.js; then
+            echo "::error::config.js 토큰 치환에 실패했습니다."
+            exit 1
+          fi
+          if grep -q 'PASTE_YOUR' config.js; then
+            echo "::error::자리표시자가 그대로 남아 있습니다."
+            exit 1
+          fi
+          echo "토큰을 끼워 넣었습니다."
+
+      - name: 개발용 문서는 배포에서 제외
+        run: rm -f CLAUDE.md PROGRESS.md RESUME.md travel-internship-spec.md config.local.example.js
+
+      - name: Pages 설정
+        uses: actions/configure-pages@v5
+
+      - name: 아티팩트 업로드
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: .
+
+      - name: 배포
+        id: deployment
+        uses: actions/deploy-pages@v4

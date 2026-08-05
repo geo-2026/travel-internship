@@ -1,224 +1,211 @@
-// =====================================================================
-//  ui.js — 화면 공통 도우미 (토스트 · 진행 표시 · 서식 · DOM 헬퍼)
-// =====================================================================
+// ui.js — 모달·토스트·입력 포맷 등 화면 공용 부품.
 
-/* --------------------------------------------------------------------
-   DOM
-   -------------------------------------------------------------------- */
-export const $ = (sel, ctx = document) => ctx.querySelector(sel);
-export const $$ = (sel, ctx = document) => Array.from(ctx.querySelectorAll(sel));
+const modalRoot = () => document.getElementById("modal-root");
+let openCount = 0;
 
-/**
- * 요소를 만듭니다.
- * el("div", { class:"x", text:"안녕" }, [자식...])
- */
 export function el(tag, attrs = {}, children = []) {
   const node = document.createElement(tag);
-  for (const [k, v] of Object.entries(attrs)) {
-    if (v == null || v === false) continue;
-    if (k === "text") { node.textContent = v; continue; }
-    if (k === "html") { node.innerHTML = v; continue; }
-    if (k === "class") { node.className = v; continue; }
-    if (k === "style" && typeof v === "object") {
-      // 커스텀 속성(--pc 등)은 setProperty 로만 설정됩니다
-      for (const [prop, val] of Object.entries(v)) {
-        if (prop.startsWith("--")) node.style.setProperty(prop, val);
-        else node.style[prop] = val;
-      }
-      continue;
-    }
-    if (k.startsWith("on") && typeof v === "function") {
+  Object.entries(attrs).forEach(([k, v]) => {
+    if (v == null || v === false) return;
+    if (k === "class") node.className = v;
+    else if (k === "html") node.innerHTML = v;
+    else if (k === "text") node.textContent = v;
+    else if (k.startsWith("on") && typeof v === "function") {
       node.addEventListener(k.slice(2).toLowerCase(), v);
-      continue;
-    }
-    if (v === true) { node.setAttribute(k, ""); continue; }
-    node.setAttribute(k, String(v));
-  }
-  for (const c of [].concat(children)) {
-    if (c == null) continue;
+    } else node.setAttribute(k, v === true ? "" : String(v));
+  });
+  (Array.isArray(children) ? children : [children]).forEach((c) => {
+    if (c == null) return;
     node.appendChild(typeof c === "string" ? document.createTextNode(c) : c);
-  }
+  });
   return node;
 }
 
-export function escapeHtml(s) {
-  return String(s == null ? "" : s)
+export function escapeHtml(str) {
+  return String(str == null ? "" : str)
     .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;").replace(/'/g, "&#39;");
 }
 
-/**
- * 조사 자동 선택 — 받침이 있으면 앞 것, 없으면 뒤 것.
- * 예) josa("숙소", "을", "를") → "를", josa("맛집", "을", "를") → "을"
- */
-export function josa(word, withBatchim, withoutBatchim) {
-  const s = String(word || "").trim();
-  if (!s) return withoutBatchim;
-  const code = s.charCodeAt(s.length - 1);
-  if (code >= 0xac00 && code <= 0xd7a3) {
-    return (code - 0xac00) % 28 ? withBatchim : withoutBatchim;
-  }
-  return withoutBatchim;
-}
+// ── 토스트 ─────────────────────────────────────────────────────────────────
 
-/* --------------------------------------------------------------------
-   토스트
-   -------------------------------------------------------------------- */
-export function toast(message, kind = "", ms = 2600) {
-  const host = document.getElementById("toastRoot");
+let toastTimer = null;
+export function toast(message, ms = 2600) {
+  const host = document.getElementById("toast");
   if (!host) return;
-  const t = el("div", { class: `toast ${kind ? "toast--" + kind : ""}`, text: message });
-  host.appendChild(t);
-  setTimeout(() => {
-    t.style.transition = "opacity .25s";
-    t.style.opacity = "0";
-    setTimeout(() => t.remove(), 260);
-  }, ms);
+  host.textContent = message;
+  host.classList.add("is-visible");
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => host.classList.remove("is-visible"), ms);
 }
 
-/* --------------------------------------------------------------------
-   진행 표시
-   -------------------------------------------------------------------- */
-let busyCount = 0;
+// ── 모달 ───────────────────────────────────────────────────────────────────
 
-export function busy(on, text = "잠시만 기다려 주세요…") {
-  const box = document.getElementById("busy");
-  const label = document.getElementById("busyText");
-  if (!box) return;
+/**
+ * 팝업을 연다. ESC · 배경 탭 · 안드로이드 뒤로가기(popstate)로 닫힌다(§6 공통 동작).
+ * @param {object} opts
+ *   title      제목
+ *   body       HTMLElement (본문)
+ *   applyLabel 적용 버튼 문구 (없으면 적용 버튼 숨김)
+ *   onApply    () => boolean|Promise<boolean> — false 를 돌려주면 닫지 않음
+ *   isDirty    () => boolean — true 면 닫기 전에 확인창
+ * @returns {{close: Function}}
+ */
+export function openModal(opts) {
+  const root = modalRoot();
+  const historyPushed = { value: false };
 
-  busyCount = Math.max(0, busyCount + (on ? 1 : -1));
-  if (busyCount > 0) {
-    if (label) label.textContent = text;
-    box.hidden = false;
-  } else {
-    box.hidden = true;
+  const backdrop = el("div", { class: "modal-backdrop", role: "presentation" });
+  const panel = el("div", {
+    class: "modal-panel", role: "dialog", "aria-modal": "true",
+    "aria-label": opts.title || "입력"
+  });
+
+  const closeBtn = el("button", {
+    class: "modal-x", type: "button", "aria-label": "닫기", text: "✕"
+  });
+
+  const header = el("div", { class: "modal-header" }, [
+    el("h2", { class: "modal-title", text: opts.title || "" }),
+    closeBtn
+  ]);
+
+  const bodyWrap = el("div", { class: "modal-body" }, [opts.body]);
+
+  const footerButtons = [
+    el("button", { class: "btn btn-ghost", type: "button", text: opts.closeLabel || "닫기" })
+  ];
+  if (opts.applyLabel !== null) {
+    footerButtons.push(
+      el("button", { class: "btn btn-primary", type: "button", text: opts.applyLabel || "적용" })
+    );
   }
-}
+  const footer = el("div", { class: "modal-footer" }, footerButtons);
 
-/** 진행 표시를 켠 채로 작업을 실행하고 반드시 끕니다 */
-export async function withBusy(text, fn) {
-  busy(true, text);
-  try {
-    return await fn();
-  } finally {
-    busy(false);
+  panel.append(header, bodyWrap, footer);
+  backdrop.appendChild(panel);
+  root.appendChild(backdrop);
+  document.body.classList.add("modal-open");
+  openCount++;
+
+  let closed = false;
+
+  function destroy() {
+    if (closed) return;
+    closed = true;
+    document.removeEventListener("keydown", onKey);
+    window.removeEventListener("popstate", onPop);
+    backdrop.remove();
+    openCount = Math.max(0, openCount - 1);
+    if (openCount === 0) document.body.classList.remove("modal-open");
+    if (historyPushed.value) {
+      historyPushed.value = false;
+      history.back();          // 우리가 넣은 항목을 되돌린다
+    }
+    if (opts.onClose) opts.onClose();
   }
+
+  function requestClose() {
+    if (opts.isDirty && opts.isDirty()) {
+      if (!confirm("저장하지 않고 닫을까요?")) return;
+    }
+    destroy();
+  }
+
+  async function apply() {
+    if (!opts.onApply) return destroy();
+    const ok = await opts.onApply();
+    if (ok !== false) {
+      if (historyPushed.value) {
+        // 적용 시에는 dirty 확인 없이 바로 닫는다
+        historyPushed.value = false;
+        history.back();
+      }
+      closed = true;
+      document.removeEventListener("keydown", onKey);
+      window.removeEventListener("popstate", onPop);
+      backdrop.remove();
+      openCount = Math.max(0, openCount - 1);
+      if (openCount === 0) document.body.classList.remove("modal-open");
+      if (opts.onClose) opts.onClose();
+    }
+  }
+
+  function onKey(e) {
+    if (e.key === "Escape") { e.stopPropagation(); requestClose(); }
+  }
+  function onPop() {
+    historyPushed.value = false;   // 이미 뒤로가기가 소비됨
+    destroy();
+  }
+
+  closeBtn.addEventListener("click", requestClose);
+  footerButtons[0].addEventListener("click", requestClose);
+  if (footerButtons[1]) footerButtons[1].addEventListener("click", apply);
+  backdrop.addEventListener("mousedown", (e) => {
+    if (e.target === backdrop) requestClose();
+  });
+  document.addEventListener("keydown", onKey);
+
+  history.pushState({ modal: true }, "");
+  historyPushed.value = true;
+  window.addEventListener("popstate", onPop);
+
+  const firstField = panel.querySelector("input, textarea, select, button");
+  if (firstField) setTimeout(() => firstField.focus(), 30);
+
+  return { close: destroy, panel };
 }
 
-/* --------------------------------------------------------------------
-   숫자 · 금액 서식
-   -------------------------------------------------------------------- */
+// ── 금액 입력 ──────────────────────────────────────────────────────────────
 
-/** 12345 → "12,345" */
-export function comma(n) {
+export function formatKRW(n) {
   const v = Number(n) || 0;
   return v.toLocaleString("ko-KR");
 }
 
-/** 12345 → "12,345원" */
-export function won(n) {
-  return `${comma(n)}원`;
+export function parseKRW(text) {
+  const digits = String(text || "").replace(/[^\d]/g, "");
+  return digits ? Number(digits) : 0;
 }
 
-/** 입력값에서 숫자만 남깁니다 */
-export function digitsOnly(s) {
-  return String(s == null ? "" : s).replace(/[^0-9]/g, "");
-}
-
-/**
- * 가격 입력칸에 "입력 즉시 천 단위 콤마"를 붙입니다 (§6 팝업 공통 동작).
- * 커서 위치를 최대한 유지합니다.
- */
-export function attachPriceMask(input) {
-  const format = () => {
-    const before = input.value;
-    const caretFromEnd = before.length - (input.selectionStart ?? before.length);
-
-    const digits = digitsOnly(before).slice(0, 12);
-    const next = digits ? comma(digits) : "";
-    if (next !== before) {
-      input.value = next;
-      const pos = Math.max(0, next.length - caretFromEnd);
-      try { input.setSelectionRange(pos, pos); } catch (_) { /* 무시 */ }
-    }
+/** 숫자만 허용하고 입력 즉시 천 단위 콤마를 넣는다(§6 공통 동작). */
+export function bindMoneyInput(input) {
+  const reformat = () => {
+    const value = parseKRW(input.value);
+    input.value = value ? formatKRW(value) : "";
   };
-  input.addEventListener("input", format);
-  input.addEventListener("blur", format);
-  format();
-  return input;
+  input.setAttribute("inputmode", "numeric");
+  input.addEventListener("input", reformat);
+  input.addEventListener("blur", reformat);
+  reformat();
+  return () => parseKRW(input.value);
 }
 
-/** 가격 입력칸의 현재 값을 숫자로 */
-export function priceValue(input) {
-  const d = digitsOnly(input.value);
-  return d ? Math.min(Number(d), 999_999_999) : 0;
+// ── 폼 필드 헬퍼 ───────────────────────────────────────────────────────────
+
+export function field(label, control, hint) {
+  const id = control.id || `f_${Math.random().toString(36).slice(2, 8)}`;
+  control.id = id;
+  return el("div", { class: "field" }, [
+    el("label", { class: "field-label", for: id, text: label }),
+    control,
+    hint ? el("p", { class: "field-hint", text: hint }) : null
+  ]);
 }
 
-/* --------------------------------------------------------------------
-   폼 조각 만들기
-   -------------------------------------------------------------------- */
-
-/**
- * 라벨 + 입력칸 한 벌
- * @returns {{ wrap:HTMLElement, input:HTMLElement, error:HTMLElement }}
- */
-export function field({
-  label, id, type = "text", value = "", placeholder = "",
-  help = "", required = false, maxlength, inputmode, rows
-}) {
-  const wrap = el("div", { class: "field" });
-
-  const lab = el("label", { class: "field__label", for: id, text: label });
-  if (required) lab.appendChild(el("span", { class: "req", text: "필수" }));
-  wrap.appendChild(lab);
-
-  const input = type === "textarea"
-    ? el("textarea", { class: "textarea", id, placeholder, rows: rows || 3, maxlength })
-    : el("input", { class: "input", id, type, placeholder, maxlength, inputmode });
-
-  input.value = value == null ? "" : String(value);
-  wrap.appendChild(input);
-
-  if (help) wrap.appendChild(el("p", { class: "field__help", text: help }));
-  const error = el("p", { class: "field__err", hidden: true });
-  wrap.appendChild(error);
-
-  return { wrap, input, error };
+export function textInput(value, placeholder, maxlength) {
+  return el("input", {
+    class: "input", type: "text", value: value || "",
+    placeholder: placeholder || "", maxlength: maxlength || null
+  });
 }
 
-export function showFieldError(errorEl, inputEl, message) {
-  if (message) {
-    errorEl.textContent = message;
-    errorEl.hidden = false;
-    inputEl.classList.add("is-error");
-  } else {
-    errorEl.hidden = true;
-    inputEl.classList.remove("is-error");
-  }
-}
-
-/* --------------------------------------------------------------------
-   기타
-   -------------------------------------------------------------------- */
-export function debounce(fn, ms) {
-  let t = null;
-  return (...args) => {
-    if (t) clearTimeout(t);
-    t = setTimeout(() => fn(...args), ms);
-  };
-}
-
-/** 두 좌표가 사실상 같은 위치인지 (약 15m 이내) */
-export function sameSpot(a, b) {
-  if (!a || !b) return false;
-  return Math.abs(a[0] - b[0]) < 0.00015 && Math.abs(a[1] - b[1]) < 0.00015;
-}
-
-/** 파일을 내려받습니다 */
-export function downloadBlob(blob, filename) {
-  const url = URL.createObjectURL(blob);
-  const a = el("a", { href: url, download: filename });
-  document.body.appendChild(a);
-  a.click();
-  setTimeout(() => { a.remove(); URL.revokeObjectURL(url); }, 1000);
+export function textArea(value, placeholder, maxlength, rows) {
+  const t = el("textarea", {
+    class: "input textarea", placeholder: placeholder || "",
+    maxlength: maxlength || null, rows: rows || 3
+  });
+  t.value = value || "";
+  return t;
 }

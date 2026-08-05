@@ -1,7 +1,10 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24" fill="currentColor" role="img" aria-label="놀이터">
-  <title>놀이터</title>
-  <path fill-rule="evenodd" d="M2.2 21 11 3.6h2L21.8 21h-2.3L12 6 4.5 21z"/>
-  <path fill-rule="evenodd" d="M5.5 9h13v1.6h-13z"/>
-  <path fill-rule="evenodd" d="M9 10.4h1.3v6H9zM13.7 10.4H15v6h-1.3z"/>
-  <path fill-rule="evenodd" d="M8 16h8v1.6H8z"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 32" width="24" height="32" role="img" aria-label="playground">
+  <path d="M12 1.2C6.62 1.2 2.26 5.56 2.26 10.94c0 6.9 8.32 18.5 8.68 18.99a1.32 1.32 0 0 0 2.12 0c.36-.49 8.68-12.09 8.68-18.99C21.74 5.56 17.38 1.2 12 1.2z" fill="currentColor" stroke="#ffffff" stroke-width="1.6" stroke-linejoin="round"/>
+  <g fill="#ffffff" transform="translate(6 5)">
+      <rect x="0.8" y="1.5" width="10.4" height="1.25" rx=".4"/>
+      <path d="M1.7 2.75h1.3L2 11.3H.7zM9 2.75h1.3l1.3 8.55H10.3z"/>
+      <rect x="4.25" y="2.75" width=".7" height="5.5"/>
+      <rect x="7.05" y="2.75" width=".7" height="5.5"/>
+      <rect x="3.5" y="8.15" width="5" height="1.15" rx=".35"/>
+  </g>
 </svg>

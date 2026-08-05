@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 32" width="24" height="32" role="img" aria-label="fitness">
+  <path d="M12 1.2C6.62 1.2 2.26 5.56 2.26 10.94c0 6.9 8.32 18.5 8.68 18.99a1.32 1.32 0 0 0 2.12 0c.36-.49 8.68-12.09 8.68-18.99C21.74 5.56 17.38 1.2 12 1.2z" fill="currentColor" stroke="#ffffff" stroke-width="1.6" stroke-linejoin="round"/>
+  <g fill="#ffffff" transform="translate(6 5)">
+      <rect x="0" y="4.2" width="1.9" height="3.6" rx=".6"/>
+      <rect x="2.3" y="2.9" width="2.2" height="6.2" rx=".7"/>
+      <rect x="4.6" y="5.1" width="2.8" height="1.8"/>
+      <rect x="7.5" y="2.9" width="2.2" height="6.2" rx=".7"/>
+      <rect x="10.1" y="4.2" width="1.9" height="3.6" rx=".6"/>
+  </g>
+</svg>

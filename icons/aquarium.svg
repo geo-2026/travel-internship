@@ -1,5 +1,6 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24" fill="currentColor" role="img" aria-label="수족관">
-  <title>수족관</title>
-  <path fill-rule="evenodd" d="M3 12c2.5-4.5 6.5-6 10-4.5v9C9.5 18 5.5 16.5 3 12zM5.6 10.6a1.05 1.05 0 1 0 2.1 0 1.05 1.05 0 1 0-2.1 0z"/>
-  <path fill-rule="evenodd" d="M13 8 20 5l-1.5 7 1.5 7-7-3z"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 32" width="24" height="32" role="img" aria-label="aquarium">
+  <path d="M12 1.2C6.62 1.2 2.26 5.56 2.26 10.94c0 6.9 8.32 18.5 8.68 18.99a1.32 1.32 0 0 0 2.12 0c.36-.49 8.68-12.09 8.68-18.99C21.74 5.56 17.38 1.2 12 1.2z" fill="currentColor" stroke="#ffffff" stroke-width="1.6" stroke-linejoin="round"/>
+  <g fill="#ffffff" transform="translate(6 5)">
+      <path fill-rule="evenodd" d="M.3 6c1.85-2.85 4.7-3.65 6.7-3.65 1.62 0 3.05.82 3.96 2.05l1.04-1.3v5.8l-1.04-1.3A4.73 4.73 0 0 1 7 9.65C5 9.65 2.15 8.85.3 6zm3.15-.85a.85.85 0 1 0 0 1.7.85.85 0 0 0 0-1.7z"/>
+  </g>
 </svg>

@@ -1,0 +1,29 @@
+# 토큰·비밀값은 어떤 형태로도 커밋하지 않습니다 (README 2장 참고).
+.env
+.env.*
+*.secret
+sk.*
+
+# 로컬 미리보기 전용 토큰 (URL 제한이 없는 토큰이라 절대 올리지 않습니다).
+# 견본은 config.local.example.js 로 저장소에 들어 있습니다.
+config.local.js
+
+# OS·편집기
+.DS_Store
+Thumbs.db
+desktop.ini
+.vscode/
+.idea/
+
+# 로컬 작업물
+node_modules/
+__pycache__/
+*.pyc
+
+# 개발용 문서·원본 자료 — 앱 동작과 무관하므로 배포에 포함하지 않습니다.
+# (같은 폴더에 두고 작업하되 GitHub Pages 에는 올리지 않습니다)
+CLAUDE.md
+PROGRESS.md
+RESUME.md
+travel-internship-spec.md
+*.hwpx

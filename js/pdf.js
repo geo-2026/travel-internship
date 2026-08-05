@@ -1,471 +1,381 @@
-// =====================================================================
-//  pdf.js — 2쪽 PDF 만들기 (명세서 §8) + 한글 깨짐 방지 (§9)
+// pdf.js — 2쪽짜리 결과물 생성. 3페이지에 들어올 때 처음 import 된다(§12).
 //
-//  이 모듈과 한글 폰트는 3페이지에 들어올 때 동적으로 불러옵니다 (§12).
-//
-//  한글 깨짐 방지 체크리스트
-//   1. 한글 TTF 를 base64 로 임베딩            → ensureFont()
-//   2. KS X 1001 이상 범위로 경량화한 서브셋     → fonts/NotoSansKR-Regular.js
-//   3. 모든 텍스트 블록 앞에서 setFont() 재호출  → text() 헬퍼가 매번 호출
-//   4. 긴 문장은 splitTextToSize 로 줄바꿈       → text() / paragraph()
-//   8. 파일명은 영문·숫자만                      → fileName()
-//   9. 지도 라벨 한글 문제는 마커 이미지에 숫자만 그려 회피 (icons.js)
-// =====================================================================
+// 한글이 깨지는 원인은 폰트 미임베딩뿐이므로(§9) 모든 텍스트 출력 앞에서
+// setFont("NotoSansKR") 를 다시 부른다. 표·머리말에서 폰트가 초기화되어
+// 일부만 깨지는 사고를 막기 위한 것이다.
 
-import { CONFIG } from "../config.js";
-import {
-  state, TYPES, orderedPlaces, totalCost
-} from "./storage.js";
+import { CONFIG, hasToken } from "../config.js";
+import { TYPES, colorOf, iconLabel } from "./icons.js";
 import * as MapView from "./map.js";
-import { formatDistance, formatDuration, isApprox, APPROX_NOTE } from "./route.js";
-import { comma } from "./ui.js";
+import { formatKRW } from "./ui.js";
+import { formatDistance, formatDuration, needsTransitNotice, TRANSIT_NOTICE } from "./route.js";
 
 const FONT_NAME = "NotoSansKR";
 const FONT_FILE = "NotoSansKR-Regular.ttf";
-
-/* --------------------------------------------------------------------
-   라이브러리 · 폰트 준비
-   -------------------------------------------------------------------- */
-let jsPdfLoading = null;
-let fontBase64 = null;
-let fontLoading = null;
-
-function loadJsPdf() {
-  if (window.jspdf && window.jspdf.jsPDF) return Promise.resolve(window.jspdf.jsPDF);
-  if (jsPdfLoading) return jsPdfLoading;
-
-  jsPdfLoading = new Promise((resolve, reject) => {
-    const s = document.createElement("script");
-    s.src = CONFIG.CDN.JSPDF;
-    s.async = true;
-    s.onload = () => {
-      if (window.jspdf && window.jspdf.jsPDF) resolve(window.jspdf.jsPDF);
-      else reject(new Error("PDF 라이브러리를 불러오지 못했습니다."));
-    };
-    s.onerror = () => reject(new Error("PDF 라이브러리를 불러오지 못했습니다. 네트워크를 확인해 주세요."));
-    document.head.appendChild(s);
-  });
-  return jsPdfLoading;
-}
-
-function loadFont() {
-  if (fontBase64) return Promise.resolve(fontBase64);
-  if (fontLoading) return fontLoading;
-
-  fontLoading = import("../fonts/NotoSansKR-Regular.js")
-    .then((m) => {
-      fontBase64 = m.NOTO_SANS_KR_BASE64 || m.default;
-      if (!fontBase64) throw new Error("한글 폰트 파일이 비어 있습니다.");
-      return fontBase64;
-    });
-  return fontLoading;
-}
-
-/** 3페이지에 들어올 때 미리 받아 둡니다 (저장 버튼을 눌렀을 때 기다리지 않도록) */
-export function preload() {
-  loadJsPdf().catch(() => {});
-  loadFont().catch(() => {});
-}
-
-function ensureFont(doc) {
-  doc.addFileToVFS(FONT_FILE, fontBase64);
-  doc.addFont(FONT_FILE, FONT_NAME, "normal");
-  doc.setFont(FONT_NAME, "normal");
-}
-
-/* --------------------------------------------------------------------
-   폰트에 들어 있는 글자만 남깁니다
-   (한자·이모지 등은 서브셋에 없어 빈칸으로 나오므로 미리 걸러냅니다)
-   -------------------------------------------------------------------- */
-// ★ 이 목록은 fonts/NotoSansKR-Regular.js 의 cmap 을 실제로 읽어 맞춘 값입니다.
-//   글자가 있다고 잘못 적으면 그 글자가 PDF 에 빈 네모로 찍힙니다.
-//   폰트를 다시 만들었다면 README 7절의 확인 절차로 이 표를 다시 맞추세요.
-const RANGES = [
-  [0x0020, 0x007e], [0x00a0, 0x00ff],
-  [0x2010, 0x2016], [0x2018, 0x201a], [0x201c, 0x201e],
-  [0x2022, 0x2022], [0x2026, 0x2026], [0x203b, 0x203b],
-  [0x20a9, 0x20a9], [0x20ac, 0x20ac], [0x2190, 0x2193],
-  [0x2460, 0x2473], [0x24ea, 0x24ea],
-  [0x25a0, 0x25ab], [0x25b1, 0x25b3], [0x25b6, 0x25b7], [0x25bc, 0x25bd],
-  [0x25c0, 0x25c1], [0x25c6, 0x25c7], [0x25c9, 0x25cc], [0x25ce, 0x25cf],
-  [0x2605, 0x2606], [0x3000, 0x303f],
-  [0x3041, 0x3096], [0x3099, 0x30ff],
-  [0x3131, 0x318e], [0xac00, 0xd7a3], [0xff01, 0xff5e], [0xffe6, 0xffe6]
-];
-
-function inFont(cp) {
-  for (const [a, b] of RANGES) if (cp >= a && cp <= b) return true;
-  return false;
-}
-
-/**
- * NFD 로 분해되지 않아 발음기호만 떼어낼 수 없는 라틴 확장 글자들.
- * (ø·æ·ß 등 라틴-1 보충 영역 글자는 서브셋에 들어 있어 그대로 나옵니다)
- */
-const FOLD = {
-  "Ł": "L", "ł": "l", "Đ": "D", "đ": "d", "Ħ": "H", "ħ": "h",
-  "Ŧ": "T", "ŧ": "t", "Œ": "OE", "œ": "oe", "ı": "i", "ĸ": "k",
-  "ſ": "s", "ŉ": "n", "Ə": "E", "ə": "e"
-};
-
-/**
- * 폰트에 없는 라틴 글자를 기본 알파벳으로 바꿉니다. (ū→u, ō→o, ș→s)
- * 일본·유럽 지명의 로마자 표기에 자주 나오므로, 그냥 지우면
- * "Chūō Ward" 가 "Ch Ward" 로 찍힙니다.
- * ★ 한글 음절은 이미 폰트에 있어 이 함수까지 오지 않습니다.
- *   (오면 NFD 가 자모로 분해해 버리므로 반드시 inFont 검사를 먼저 할 것)
- */
-function foldLatin(ch) {
-  if (FOLD[ch]) return FOLD[ch];
-  const d = ch.normalize("NFD").replace(/[̀-ͯ]/g, "");   // 결합 발음기호 제거
-  return d === ch ? "" : d;
-}
-
-/** 폰트에 없는 글자를 대체하거나 지웁니다. 남는 글자가 없으면 빈 문자열. */
-export function pdfSafe(s) {
-  const str = String(s == null ? "" : s);
-  let out = "";
-  for (const ch of str) {
-    if (inFont(ch.codePointAt(0))) { out += ch; continue; }
-    for (const f of foldLatin(ch)) {
-      if (inFont(f.codePointAt(0))) out += f;
-    }
-  }
-  return out.replace(/\s+/g, " ").trim();
-}
-
-/** ① ~ ⑳ (그 밖은 "21." 처럼) */
-function circledNum(n) {
-  if (n >= 1 && n <= 20) return String.fromCharCode(0x2460 + n - 1);
-  return `${n}.`;
-}
-
-/* --------------------------------------------------------------------
-   문서 도우미
-   -------------------------------------------------------------------- */
+const MARGIN = 15;
 const PAGE_W = 210;
 const PAGE_H = 297;
-const M = 15;               // 여백
-const CONTENT_W = PAGE_W - M * 2;
-const FOOT_Y = PAGE_H - 10;
+const CONTENT_W = PAGE_W - MARGIN * 2;
 
-const ATTRIBUTION =
-  "지도 데이터 © MapTiler © OpenStreetMap contributors · 경로 © openrouteservice";
+// ── 라이브러리 로딩 ────────────────────────────────────────────────────────
 
-function hexToRgb(hex) {
-  const h = String(hex || "#6b7280").replace("#", "");
-  const v = h.length === 3 ? h.split("").map((c) => c + c).join("") : h;
-  return [
-    parseInt(v.slice(0, 2), 16) || 0,
-    parseInt(v.slice(2, 4), 16) || 0,
-    parseInt(v.slice(4, 6), 16) || 0
-  ];
-}
-
-function makeDoc(jsPDF) {
-  const doc = new jsPDF({ unit: "mm", format: "a4", orientation: "portrait", compress: true });
-  ensureFont(doc);
-  return doc;
-}
-
-/**
- * 텍스트 한 줄(또는 여러 줄)을 그립니다.
- * ★ 표·헤더에서 폰트가 초기화되는 사례가 잦아 매번 setFont 를 호출합니다 (§9-3).
- */
-function text(doc, str, x, y, { size = 10, color = [17, 24, 39], maxWidth, align = "left" } = {}) {
-  const safe = pdfSafe(str);
-  if (!safe) return y;
-
-  doc.setFont(FONT_NAME, "normal");   // ← 매 블록마다 재호출
-  doc.setFontSize(size);
-  doc.setTextColor(color[0], color[1], color[2]);
-
-  const lines = maxWidth ? doc.splitTextToSize(safe, maxWidth) : [safe];
-  doc.text(lines, x, y, { align });
-
-  const lh = size * 0.3528 * 1.35;    // pt → mm, 줄간격 1.35
-  return y + lines.length * lh;
-}
-
-function hr(doc, y, color = [229, 231, 235]) {
-  doc.setDrawColor(color[0], color[1], color[2]);
-  doc.setLineWidth(0.3);
-  doc.line(M, y, PAGE_W - M, y);
-  return y + 1;
-}
-
-function dot(doc, x, y, r, hex) {
-  const [rr, gg, bb] = hexToRgb(hex);
-  doc.setFillColor(rr, gg, bb);
-  doc.circle(x, y, r, "F");
-}
-
-function pageHeader(doc) {
-  text(doc, CONFIG.APP_TITLE, M, 13, { size: 9, color: [107, 114, 128] });
-  return hr(doc, 15.5);
-}
-
-function pageFooter(doc) {
-  text(doc, ATTRIBUTION, PAGE_W / 2, FOOT_Y, {
-    size: 7.5, color: [107, 114, 128], align: "center", maxWidth: CONTENT_W
+function loadJsPDF() {
+  if (window.jspdf && window.jspdf.jsPDF) return Promise.resolve(window.jspdf.jsPDF);
+  return new Promise((resolve, reject) => {
+    const s = document.createElement("script");
+    s.src = "vendor/jspdf.umd.min.js";
+    s.onload = () => {
+      if (window.jspdf && window.jspdf.jsPDF) resolve(window.jspdf.jsPDF);
+      else reject(new Error("jsPDF 를 불러오지 못했습니다."));
+    };
+    s.onerror = () => reject(new Error("jsPDF 파일을 찾지 못했습니다. (vendor/jspdf.umd.min.js)"));
+    document.head.appendChild(s);
   });
 }
 
-/* --------------------------------------------------------------------
-   1쪽 — 표지 + 지도 + 번호 범례 (§8-1)
-   -------------------------------------------------------------------- */
-function drawPage1(doc, mapImage, list) {
-  let y = pageHeader(doc);
+// ── 지도 이미지 ────────────────────────────────────────────────────────────
 
-  // 여행 명칭
-  y = text(doc, state.trip.title || "여행 계획", M, y + 10, { size: 21 });
+/** 캔버스 캡처(기본). 타일이 다 그려질 때까지 기다린 뒤 찍는다(§8-2). */
+async function captureMapCanvas(places) {
+  const map = MapView.getMap();
+  if (!map) throw new Error("map not ready");
+  return MapView.withCaptureSize(async () => {
+    MapView.fitToPlaces(places, 60);
+    await MapView.waitForIdle();
+    const dataUrl = map.getCanvas().toDataURL("image/png");
+    if (!dataUrl || dataUrl.length < 5000) throw new Error("빈 캔버스");
+    return dataUrl;
+  });
+}
 
-  // 학번 · 이름
-  y = text(doc,
-    `${state.trip.studentId || ""}  ${state.trip.studentName || ""}` +
-    (state.trip.city ? `   ·   ${state.trip.city.nameKo}` +
-      (state.trip.city.country ? ` (${state.trip.city.country})` : "") : ""),
-    M, y + 3, { size: 11, color: [55, 65, 81] });
+// Google polyline (precision 5) — Static Images API 의 path 인자용.
+function encodePolyline(coords) {
+  let lastLat = 0;
+  let lastLon = 0;
+  let out = "";
+  const chunk = (v) => {
+    let value = v < 0 ? ~(v << 1) : v << 1;
+    let s = "";
+    while (value >= 0x20) {
+      s += String.fromCharCode((0x20 | (value & 0x1f)) + 63);
+      value >>= 5;
+    }
+    return s + String.fromCharCode(value + 63);
+  };
+  coords.forEach(([lon, lat]) => {
+    const la = Math.round(lat * 1e5);
+    const lo = Math.round(lon * 1e5);
+    out += chunk(la - lastLat) + chunk(lo - lastLon);
+    lastLat = la;
+    lastLon = lo;
+  });
+  return out;
+}
 
-  y += 5;
+/** Douglas-Peucker — URL 8,192자 제한을 넘지 않도록 경로를 줄인다(§8-3). */
+function simplify(coords, tolerance) {
+  if (coords.length < 3) return coords;
+  const sqDist = (p, a, b) => {
+    let [x, y] = a;
+    let dx = b[0] - x;
+    let dy = b[1] - y;
+    if (dx !== 0 || dy !== 0) {
+      const t = ((p[0] - x) * dx + (p[1] - y) * dy) / (dx * dx + dy * dy);
+      if (t > 1) { x = b[0]; y = b[1]; }
+      else if (t > 0) { x += dx * t; y += dy * t; }
+    }
+    dx = p[0] - x;
+    dy = p[1] - y;
+    return dx * dx + dy * dy;
+  };
+  const keep = new Array(coords.length).fill(false);
+  keep[0] = keep[coords.length - 1] = true;
+  const stack = [[0, coords.length - 1]];
+  const tol2 = tolerance * tolerance;
+  while (stack.length) {
+    const [first, last] = stack.pop();
+    let maxD = 0;
+    let idx = -1;
+    for (let i = first + 1; i < last; i++) {
+      const d = sqDist(coords[i], coords[first], coords[last]);
+      if (d > maxD) { maxD = d; idx = i; }
+    }
+    if (maxD > tol2 && idx > 0) {
+      keep[idx] = true;
+      stack.push([first, idx], [idx, last]);
+    }
+  }
+  return coords.filter((_, i) => keep[i]);
+}
 
-  // 지도 이미지 (4:3)
-  const imgW = CONTENT_W;
-  const imgH = imgW * 0.75;
+/** 폴백 — Static Images API. 라벨은 숫자만 쓸 수 있다(§8-3). */
+async function staticMapImage(places, routeGeometry) {
+  if (!hasToken()) throw new Error("토큰 없음");
+  const base = "https://api.mapbox.com/styles/v1/mapbox/streets-v12/static/";
+  const suffix = `/auto/1000x750@2x?access_token=${encodeURIComponent(CONFIG.MAPBOX_TOKEN)}&language=ko`;
+
+  const pins = places.slice(0, 20).map((p, i) => {
+    const color = colorOf(p.type, p.shade || "base").replace("#", "");
+    const label = i + 1 <= 99 ? i + 1 : "";
+    return `pin-s-${label}+${color}(${p.coord[0].toFixed(5)},${p.coord[1].toFixed(5)})`;
+  });
+
+  const buildUrl = (overlayParts) => base + overlayParts.join(",") + suffix;
+
+  let overlays = pins.slice();
+  if (routeGeometry && routeGeometry.coordinates && routeGeometry.coordinates.length > 1) {
+    let coords = routeGeometry.coordinates;
+    let tolerance = 0.00005;
+    for (let i = 0; i < 8; i++) {
+      const encoded = encodePolyline(simplify(coords, tolerance));
+      const candidate = [`path-4+2563eb-0.9(${encodeURIComponent(encoded)})`, ...pins];
+      if (buildUrl(candidate).length <= 8192) { overlays = candidate; break; }
+      tolerance *= 3;
+    }
+  }
+
+  let url = buildUrl(overlays);
+  if (url.length > 8192) url = buildUrl(pins);   // 그래도 길면 경로 생략, 마커만
+
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`Static Images ${res.status}`);
+  const blob = await res.blob();
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = () => reject(new Error("정적 지도 이미지를 읽지 못했습니다."));
+    reader.readAsDataURL(blob);
+  });
+}
+
+// ── 아이콘 래스터화 (PDF 범례용) ────────────────────────────────────────────
+
+const iconPngCache = new Map();
+async function iconPng(name, color, size = 48) {
+  const key = `${name}|${color}|${size}`;
+  if (iconPngCache.has(key)) return iconPngCache.get(key);
+  const raw = await fetch(`icons/${name}.svg`).then((r) => r.text());
+  const url = "data:image/svg+xml;charset=utf-8," + encodeURIComponent(raw.replace(/currentColor/g, color));
+  const img = await new Promise((resolve, reject) => {
+    const im = new Image();
+    im.onload = () => resolve(im);
+    im.onerror = () => reject(new Error("icon"));
+    im.src = url;
+  });
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.round(size * 0.75);
+  canvas.height = size;
+  const ctx = canvas.getContext("2d");
+  ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+  const dataUrl = canvas.toDataURL("image/png");
+  iconPngCache.set(key, dataUrl);
+  return dataUrl;
+}
+
+/** ①~⑳. 서브셋 폰트에 U+2460~2473 을 포함해 두었다. 그 밖은 "21." 형태로. */
+function circledNumber(n) {
+  return n >= 1 && n <= 20 ? String.fromCharCode(0x2460 + n - 1) : `${n}.`;
+}
+
+// ── 본문 ───────────────────────────────────────────────────────────────────
+
+export async function generatePdf(state, routeState) {
+  const jsPDFCtor = await loadJsPDF();
+  const { NOTO_SANS_KR_BASE64 } = await import("../fonts/NotoSansKR-Regular.js");
+
+  const doc = new jsPDFCtor({ unit: "mm", format: "a4", orientation: "portrait" });
+  doc.addFileToVFS(FONT_FILE, NOTO_SANS_KR_BASE64);
+  doc.addFont(FONT_FILE, FONT_NAME, "normal");
+
+  // 모든 텍스트 출력 앞에서 폰트를 다시 지정한다(§9-3).
+  const text = (str, x, y, opts = {}) => {
+    doc.setFont(FONT_NAME, "normal");
+    doc.setFontSize(opts.size || 10);
+    doc.setTextColor(opts.color || "#111827");
+    doc.text(String(str == null ? "" : str), x, y, opts.align ? { align: opts.align } : undefined);
+  };
+
+  /** 한글은 자동 줄바꿈되지 않으므로 반드시 splitTextToSize 로 자른다(§9-4). */
+  const paragraph = (str, x, y, width, opts = {}) => {
+    doc.setFont(FONT_NAME, "normal");
+    doc.setFontSize(opts.size || 10);
+    doc.setTextColor(opts.color || "#374151");
+    const lines = doc.splitTextToSize(String(str || ""), width);
+    doc.text(lines, x, y);
+    return y + lines.length * (opts.lineHeight || (opts.size || 10) * 0.42 + 1.4);
+  };
+
+  const footer = () => {
+    doc.setFont(FONT_NAME, "normal");
+    doc.setFontSize(8);
+    doc.setTextColor("#6b7280");
+    doc.text("지도 데이터 © Mapbox © OpenStreetMap", MARGIN, PAGE_H - 10);
+  };
+
+  const places = state.places;
+  const trip = state.trip;
+
+  // ── 1쪽 ─────────────────────────────────────────────────────────────────
+  text(CONFIG.APP_TITLE, MARGIN, 14, { size: 10, color: "#6b7280" });
+  doc.setDrawColor("#d1d5db");
+  doc.line(MARGIN, 17, PAGE_W - MARGIN, 17);
+
+  text(trip.title || "여행 계획", MARGIN, 28, { size: 19, color: "#111827" });
+  text(`${trip.studentId || ""}  ${trip.studentName || ""}`, MARGIN, 36, { size: 11, color: "#374151" });
+  if (trip.city) {
+    text(`여행 도시: ${trip.city.nameKo} (${trip.city.country})`, MARGIN, 43, { size: 10, color: "#374151" });
+  }
+
+  // 지도 이미지 — 캔버스 캡처 우선, 실패 시 Static Images 폴백
+  const mapY = 48;
+  const mapH = Math.round((CONTENT_W * 3) / 4);
+  let mapImage = null;
+  try {
+    mapImage = await captureMapCanvas(places);
+  } catch (err) {
+    console.warn("캔버스 캡처 실패 — Static Images 로 대체합니다.", err);
+    try {
+      mapImage = await staticMapImage(places, routeState && routeState.geometry);
+    } catch (err2) {
+      console.warn("정적 지도도 실패했습니다.", err2);
+    }
+  }
 
   if (mapImage) {
-    try {
-      doc.addImage(mapImage, "PNG", M, y, imgW, imgH, undefined, "FAST");
-    } catch (e) {
-      console.warn("[pdf] 지도 이미지 삽입 실패", e);
-      drawMapPlaceholder(doc, M, y, imgW, imgH);
-    }
+    doc.addImage(mapImage, "PNG", MARGIN, mapY, CONTENT_W, mapH);
+    doc.setDrawColor("#9ca3af");
+    doc.rect(MARGIN, mapY, CONTENT_W, mapH);
   } else {
-    drawMapPlaceholder(doc, M, y, imgW, imgH);
-  }
-  doc.setDrawColor(209, 213, 219);
-  doc.setLineWidth(0.3);
-  doc.rect(M, y, imgW, imgH);
-  y += imgH + 8;
-
-  if (isApprox(state.transport.localModes)) {
-    y = text(doc, `※ ${APPROX_NOTE} — 실제 대중교통 노선과 다를 수 있습니다.`, M, y,
-      { size: 8.5, color: [146, 64, 14], maxWidth: CONTENT_W });
-    y += 1;
-  }
-  if (state.route && state.route.straight) {
-    y = text(doc, "※ 경로를 불러오지 못해 방문지를 잇는 직선으로 표시했습니다.", M, y,
-      { size: 8.5, color: [146, 64, 14], maxWidth: CONTENT_W });
-    y += 1;
+    doc.setFillColor("#f3f4f6");
+    doc.rect(MARGIN, mapY, CONTENT_W, mapH, "F");
+    text("지도 이미지를 만들지 못했습니다.", PAGE_W / 2, mapY + mapH / 2, { size: 10, align: "center", color: "#6b7280" });
   }
 
-  // 번호 범례 — 20곳까지 2단으로
-  y = text(doc, "방문 순서", M, y + 4, { size: 12 });
-  y = hr(doc, y + 1) + 4;
+  // 번호 범례
+  let y = mapY + mapH + 10;
+  text("방문 순서", MARGIN, y, { size: 12 });
+  y += 6;
 
-  const twoCol = list.length > 10;
-  const colW = twoCol ? (CONTENT_W - 6) / 2 : CONTENT_W;
-  const rowH = 6.2;
-  const perCol = twoCol ? Math.ceil(list.length / 2) : list.length;
+  for (const p of places) {
+    if (y > PAGE_H - 22) break;              // 1쪽을 넘기지 않는다
+    const color = colorOf(p.type, p.shade || "base");
+    try {
+      const png = await iconPng(p.icon, color, 48);
+      doc.addImage(png, "PNG", MARGIN, y - 4.2, 4.2, 5.6);
+    } catch {
+      doc.setFillColor(color);
+      doc.circle(MARGIN + 2, y - 1.5, 1.8, "F");
+    }
+    text(circledNumber(p.order), MARGIN + 6, y, { size: 10, color: "#111827" });
+    text(p.name, MARGIN + 12, y, { size: 10 });
+    text(`(${TYPES[p.type].label})`, MARGIN + 12 + doc.getTextWidth(p.name) + 2, y, { size: 9, color: "#6b7280" });
+    y += 6.4;
+  }
+  if (places.length && y > PAGE_H - 22) {
+    text("… 이하 항목은 2쪽에서 확인하세요.", MARGIN, y, { size: 9, color: "#6b7280" });
+  }
+  footer();
 
-  list.forEach((p, i) => {
-    const col = twoCol ? Math.floor(i / perCol) : 0;
-    const row = twoCol ? i % perCol : i;
-    const x = M + col * (colW + 6);
-    const ly = y + row * rowH;
-
-    text(doc, circledNum(p.order), x, ly, { size: 10 });
-    dot(doc, x + 7.5, ly - 1.2, 1.5, p.color);
-
-    const label = `${p.name}  (${(TYPES[p.type] || {}).label || ""})`;
-    text(doc, label, x + 10.5, ly, { size: 9.5, color: [31, 41, 55], maxWidth: colW - 11 });
-  });
-
-  pageFooter(doc);
-}
-
-function drawMapPlaceholder(doc, x, y, w, h) {
-  doc.setFillColor(243, 244, 246);
-  doc.rect(x, y, w, h, "F");
-  text(doc, "지도 이미지를 만들지 못했습니다.", x + w / 2, y + h / 2,
-    { size: 10, color: [107, 114, 128], align: "center" });
-}
-
-/* --------------------------------------------------------------------
-   2쪽 — 비용 · 이동수단 · 방문지 상세 (§8-1)
-   -------------------------------------------------------------------- */
-function drawPage2(doc, list) {
+  // ── 2쪽 ─────────────────────────────────────────────────────────────────
   doc.addPage();
-  let y = pageHeader(doc);
+  text(CONFIG.APP_TITLE, MARGIN, 14, { size: 10, color: "#6b7280" });
+  doc.setDrawColor("#d1d5db");
+  doc.line(MARGIN, 17, PAGE_W - MARGIN, 17);
+
+  y = 27;
+  text("여행 비용과 이동", MARGIN, y, { size: 13 });
   y += 8;
 
-  /* ---- 비용 · 거리 요약 ---- */
-  y = text(doc, "여행 요약", M, y, { size: 13 });
-  y = hr(doc, y + 1) + 5;
-
-  const rows = [];
+  const summaryRows = [];
   if (state.transport.isInternational) {
-    rows.push(["왕복 항공료", `${comma(state.transport.flightCostKRW)}원`]);
+    summaryRows.push(["왕복 항공료", `${formatKRW(state.transport.flightCostKRW)}원`]);
   }
-  rows.push(["총 이용 비용 (항공료 제외)", `${comma(totalCost())}원`]);
-  rows.push([
-    "총 이동 거리 · 시간",
-    state.route
-      ? `${formatDistance(state.route.distanceM)} / ${formatDuration(state.route.durationS)}`
-      : "-"
+  const totalCost = places.reduce((s, p) => s + (Number(p.priceKRW) || 0), 0);
+  summaryRows.push(["총 이용 비용 (항공료 제외)", `${formatKRW(totalCost)}원`]);
+  summaryRows.push([
+    "총 이동 거리 / 시간",
+    !routeState || routeState.distanceM == null
+      ? "계산되지 않음"
+      : routeState.fallback
+        ? `${formatDistance(routeState.distanceM)} (직선 기준 근사)`
+        : `${formatDistance(routeState.distanceM)} / ${formatDuration(routeState.durationS)}`
   ]);
-  rows.push(["방문지 수", `${list.length}곳`]);
 
-  rows.forEach(([k, v]) => {
-    text(doc, k, M, y, { size: 10, color: [55, 65, 81] });
-    text(doc, v, PAGE_W - M, y, { size: 11, align: "right" });
-    y += 6.4;
-    doc.setDrawColor(243, 244, 246);
-    doc.setLineWidth(0.2);
-    doc.line(M, y - 2.4, PAGE_W - M, y - 2.4);
+  const modeLabels = { public: "대중교통", walk: "도보" };
+  summaryRows.push([
+    "이동 수단",
+    (state.transport.localModes || []).map((m) => modeLabels[m] || m).join(", ") || "선택하지 않음"
+  ]);
+
+  summaryRows.forEach(([label, value]) => {
+    text(label, MARGIN, y, { size: 10, color: "#6b7280" });
+    text(value, PAGE_W - MARGIN, y, { size: 10, align: "right" });
+    doc.setDrawColor("#e5e7eb");
+    doc.line(MARGIN, y + 1.8, PAGE_W - MARGIN, y + 1.8);
+    y += 8;
   });
 
-  /* ---- 이동 수단 ---- */
-  y += 6;
-  y = text(doc, "이동 수단 및 주의점", M, y, { size: 13 });
-  y = hr(doc, y + 1) + 5;
-
-  const modeLabel = {
-    public: "대중교통",
-    walk: "도보"
-  };
-  const modes = (state.transport.localModes || []).map((m) => modeLabel[m] || m);
-  y = text(doc, `이용 수단 : ${modes.length ? modes.join(", ") : "선택하지 않음"}`,
-    M, y, { size: 10, color: [31, 41, 55] });
-
-  if (isApprox(state.transport.localModes)) {
-    y = text(doc, `※ ${APPROX_NOTE}`, M, y + 1.5,
-      { size: 9, color: [146, 64, 14], maxWidth: CONTENT_W });
+  if (needsTransitNotice(state.transport.localModes)) {
+    y += 1;
+    y = paragraph(`※ ${TRANSIT_NOTICE} — 실제 지하철·버스 노선과 다를 수 있습니다.`,
+                  MARGIN, y, CONTENT_W, { size: 9, color: "#b45309" });
   }
 
   if (state.transport.cautions) {
-    y = text(doc, state.transport.cautions, M, y + 2,
-      { size: 10, color: [55, 65, 81], maxWidth: CONTENT_W });
+    y += 3;
+    text("이동 수단 사용의 주의점", MARGIN, y, { size: 10 });
+    y += 5;
+    y = paragraph(state.transport.cautions, MARGIN, y, CONTENT_W, { size: 9.5 });
   }
 
-  /* ---- 방문 순서별 상세 ---- */
+  y += 6;
+  text("방문 순서별 상세", MARGIN, y, { size: 13 });
   y += 8;
-  y = text(doc, "방문 순서별 상세", M, y, { size: 13 });
-  y = hr(doc, y + 1) + 5;
 
-  const ensure = (need) => {
-    if (y + need > FOOT_Y - 8) {
-      pageFooter(doc);
-      doc.addPage();
-      y = pageHeader(doc) + 8;
-    }
+  // 화면 팝업과 같은 순서로 찍는다 — 학생이 입력한 차례대로 읽히도록.
+  const DETAIL_ORDER = {
+    stay: [["roomName", "객실명"], ["note", "숙소 소개"]],
+    sight: [["highlights", "주요 볼거리"], ["access", "이동 방법"], ["note", "관광지 소개"]],
+    food: [["food1", "주요 음식 1"], ["food2", "주요 음식 2"], ["access", "이동 방법"], ["note", "맛집 소개"]],
+    activity: [["venue", "이용 장소"], ["access", "이동 방법"], ["note", "액티비티 소개"]]
   };
 
-  list.forEach((p) => {
-    const lines = detailLines(p);
-    ensure(12 + lines.length * 5);
+  for (const p of places) {
+    if (y > PAGE_H - 30) {
+      footer();
+      doc.addPage();
+      text(CONFIG.APP_TITLE, MARGIN, 14, { size: 10, color: "#6b7280" });
+      y = 27;
+    }
+    const color = colorOf(p.type, p.shade || "base");
+    doc.setFillColor(color);
+    doc.circle(MARGIN + 1.8, y - 1.4, 1.8, "F");
 
-    // 머리 줄
-    text(doc, circledNum(p.order), M, y, { size: 11 });
-    dot(doc, M + 8, y - 1.3, 1.6, p.color);
-    text(doc, p.name, M + 11.5, y, { size: 11, maxWidth: CONTENT_W - 45 });
-    text(doc, (TYPES[p.type] || {}).label || "", PAGE_W - M, y,
-      { size: 9, color: [107, 114, 128], align: "right" });
-    y += 5.4;
+    text(`${p.order}. ${p.name}`, MARGIN + 6, y, { size: 11 });
+    text(`${TYPES[p.type].label} · ${iconLabel(p.type, p.icon)}`, MARGIN + 6, y + 5, { size: 8.5, color: "#6b7280" });
+    text(`${formatKRW(p.priceKRW)}원`, PAGE_W - MARGIN, y, { size: 10.5, align: "right" });
+    y += 10;
 
-    lines.forEach(([k, v]) => {
-      const before = y;
-      text(doc, k, M + 4, y, { size: 8.8, color: [107, 114, 128] });
-      y = text(doc, v, M + 32, y, { size: 9.5, color: [31, 41, 55], maxWidth: CONTENT_W - 36 });
-      y = Math.max(y, before + 4.6);
-    });
-
+    const detail = p.detail || {};
+    for (const [key, label] of DETAIL_ORDER[p.type] || []) {
+      const value = detail[key];
+      if (!value) continue;
+      text(label, MARGIN + 6, y, { size: 8.5, color: "#6b7280" });
+      y = paragraph(value, MARGIN + 30, y, CONTENT_W - 30, { size: 9.5 }) + 0.5;
+    }
     y += 3;
-    doc.setDrawColor(229, 231, 235);
-    doc.setLineWidth(0.2);
-    doc.line(M, y - 1.5, PAGE_W - M, y - 1.5);
-    y += 2.5;
-  });
-
-  /* ---- 생성 일시 ---- */
-  ensure(12);
-  y += 2;
-  text(doc, `생성 일시 : ${formatNow()}`, M, y, { size: 8.5, color: [107, 114, 128] });
-
-  pageFooter(doc);
-}
-
-/** 유형별 상세 항목을 [항목명, 내용] 목록으로 (§6-5 ~ §6-8) */
-function detailLines(p) {
-  const d = p.detail || {};
-  const out = [];
-
-  const searched = pdfSafe(p.searchedName);
-  if (searched && searched !== pdfSafe(p.name)) out.push(["검색된 명칭", searched]);
-
-  if (p.priceKRW > 0) out.push(["가격", `${comma(p.priceKRW)}원`]);
-
-  switch (p.type) {
-    case "stay":
-      if (d.roomName) out.push(["객실명", d.roomName]);
-      if (d.note) out.push(["소개", d.note]);
-      break;
-    case "sight":
-      if (d.highlight) out.push(["주요 볼거리", d.highlight]);
-      if (d.access) out.push(["이동 방법", d.access]);
-      if (d.note) out.push(["소개", d.note]);
-      break;
-    case "food":
-      if (d.food1 || d.food2) {
-        out.push(["주요 음식", [d.food1, d.food2].filter(Boolean).join(", ")]);
-      }
-      if (d.access) out.push(["이동 방법", d.access]);
-      if (d.note) out.push(["소개", d.note]);
-      break;
-    case "activity":
-      if (d.venue) out.push(["이용 장소", d.venue]);
-      if (d.access) out.push(["이동 방법", d.access]);
-      if (d.note) out.push(["소개", d.note]);
-      break;
+    doc.setDrawColor("#f3f4f6");
+    doc.line(MARGIN, y - 1.5, PAGE_W - MARGIN, y - 1.5);
+    y += 1.5;
   }
 
-  if (p.address) out.push(["주소", p.address]);
-  return out.filter(([, v]) => pdfSafe(v));
-}
+  const now = new Date();
+  const stamp = `${now.getFullYear()}년 ${now.getMonth() + 1}월 ${now.getDate()}일 ` +
+                `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")} 생성`;
+  text(stamp, PAGE_W - MARGIN, PAGE_H - 16, { size: 8.5, align: "right", color: "#6b7280" });
+  footer();
 
-function formatNow() {
-  const d = new Date();
-  const p = (n) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}년 ${d.getMonth() + 1}월 ${d.getDate()}일 ${p(d.getHours())}:${p(d.getMinutes())}`;
-}
-
-/* --------------------------------------------------------------------
-   파일명 — 영문·숫자만 (§9-8)
-   -------------------------------------------------------------------- */
-export function fileName() {
-  const id = String(state.trip.studentId || "").replace(/[^0-9A-Za-z]/g, "");
-  return `travel_internship_${id || "student"}.pdf`;
-}
-
-/* --------------------------------------------------------------------
-   메인
-   -------------------------------------------------------------------- */
-export async function buildAndSave() {
-  const [jsPDF] = await Promise.all([loadJsPdf(), loadFont()]);
-
-  const list = orderedPlaces();
-
-  // 지도 캡처 — 실패하면 §8-3 정적 지도 폴백
-  let mapImage = await MapView.captureForPdf(list);
-  if (!mapImage) {
-    console.info("[pdf] 캔버스 캡처 실패 → 정적 지도 폴백을 시도합니다.");
-    mapImage = await MapView.staticMapFallback(list);
-  }
-
-  const doc = makeDoc(jsPDF);
-  drawPage1(doc, mapImage, list);
-  drawPage2(doc, list);
-
-  doc.save(fileName());
-  return true;
+  // 파일명은 영문·숫자만 — 일부 모바일에서 한글 파일명이 깨진다(§9-8).
+  const safeId = String(trip.studentId || "student").replace(/[^A-Za-z0-9_-]/g, "") || "student";
+  doc.save(`travel_internship_${safeId}.pdf`);
 }
