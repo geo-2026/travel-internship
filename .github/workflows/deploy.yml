@@ -56,7 +56,8 @@ jobs:
             echo "::error::config.js 토큰 치환에 실패했습니다."
             exit 1
           fi
-          if grep -q 'PASTE_YOUR' config.js; then
+          # hasToken() 안에도 "PASTE_YOUR" 문자열이 있으므로 토큰 줄만 본다.
+          if grep -q 'MAPBOX_TOKEN: "pk\.PASTE_YOUR' config.js; then
             echo "::error::자리표시자가 그대로 남아 있습니다."
             exit 1
           fi
