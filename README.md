@@ -32,14 +32,29 @@
 3. 이름: `travel-internship-class`
 4. **Public scope 만** 체크합니다 — `styles:tiles`, `styles:read`, `fonts:read`, `datasets:read` 등 읽기 전용.
    `*:write`, `tokens:write` 같은 **Secret scope 는 절대 체크하지 마세요.**
-5. **URL restrictions** 에 배포 주소만 입력합니다.
+5. **URL restrictions** 에 아래 **한 줄만** 입력합니다.
 
    ```
-   https://geo-2026.github.io/travel-internship/*
+   https://geo-2026.github.io/*
    ```
 
    > 이 항목이 **이 앱의 가장 중요한 방어선**입니다. 토큰이 노출되어도 다른 사이트에서는
-   > 요청이 거부됩니다.
+   > 요청이 거부됩니다. `geo-2026.github.io` 는 교사 계정의 GitHub Pages 도메인이라
+   > 외부인이 이 주소로 페이지를 올릴 수 없습니다.
+
+   ### ⚠ 경로(`/travel-internship/*`)까지 적으면 지도가 안 나옵니다
+
+   실제로 겪은 문제입니다. `https://geo-2026.github.io/travel-internship/*` 처럼
+   **경로까지** 적으면 이렇게 됩니다.
+
+   | 기능 | 결과 |
+   |---|---|
+   | 검색 · 경로 · 정적 지도 | 동작함 |
+   | **지도 타일** | **전부 403 — 지도가 빈 화면** |
+
+   지도 타일은 브라우저의 **웹 워커**가 받아 오는데, 워커의 요청에는 경로가 빠진
+   `https://geo-2026.github.io/` 만 실려 나갑니다. 그래서 경로까지 적은 제한과는
+   영원히 일치하지 않습니다. **반드시 도메인까지만 적으세요.**
 
 6. 발급된 `pk.` 로 시작하는 토큰을 `config.js` 에 붙여 넣습니다.
 
