@@ -102,6 +102,118 @@ export function setBackdropScrollLock(on) {
   document.body.classList.toggle("modal-open", Boolean(on));
 }
 
+// ── 팝업 옮기기 ────────────────────────────────────────────────────────────
+//
+// 팝업이 지도를 가려서 "지도를 보면서 입력" 이 안 된다는 요청으로 넣었다.
+// 제목 줄을 잡고 끌면 팝업이 따라 움직인다.
+//
+// · 한 번이라도 옮기면 배경(어두운 막)을 투명하게 바꾸고 `pointer-events: none`
+//   으로 만든다. 그래야 팝업 옆의 **지도를 그대로 보고 만질 수 있다.**
+//   이때 "배경 탭 = 닫기" 는 자연히 없어지는데, 지도를 만지다가 입력하던 내용이
+//   날아가지 않으므로 오히려 낫다. 닫기는 ✕·닫기 버튼·ESC 로 한다.
+// · 화면 밖으로 끌어내면 되돌릴 수 없으므로 항상 가장자리에서 묶는다(clamp).
+// · 마우스가 없는 환경을 위해 손잡이 버튼에서 방향키로도 옮길 수 있다.
+const DRAG_KEEP_VISIBLE = 120;   // 화면 안에 반드시 남겨 둘 팝업 너비(px)
+const DRAG_KEEP_HEADER = 56;     // 제목 줄이 화면 아래로 사라지지 않게
+
+// 옮겨진 팝업이 몇 개인지. 하나라도 있으면 배경이 클릭을 통과시키므로,
+// 그동안에는 뒤쪽에서 **지도만** 만질 수 있게 body 에 표시를 남긴다.
+// (그러지 않으면 팝업을 열어 둔 채 [다음]·[+ 숙소] 가 눌려 화면이 바뀐다.)
+let movedCount = 0;
+function setMovedCount(delta) {
+  movedCount = Math.max(0, movedCount + delta);
+  document.body.classList.toggle("modal-moved", movedCount > 0);
+}
+
+function makeDraggable(panel, header, backdrop, handleBtn) {
+  let dx = 0, dy = 0;                       // 원래 위치에서 옮긴 거리
+  let dragging = false, sx = 0, sy = 0, bx = 0, by = 0;
+  let counted = false;
+
+  const apply = () => {
+    const moved = dx !== 0 || dy !== 0;
+    panel.style.transform = moved ? `translate(${dx}px, ${dy}px)` : "";
+    backdrop.classList.toggle("is-moved", moved);
+    if (moved !== counted) {
+      counted = moved;
+      setMovedCount(moved ? 1 : -1);
+    }
+  };
+
+  /** 팝업이 화면 밖으로 나가지 않도록 이동량을 묶는다. */
+  function clamp(nx, ny) {
+    const r = panel.getBoundingClientRect();
+    const left = r.left - dx;               // transform 을 뺀 원래(레이아웃) 위치
+    const top = r.top - dy;
+    const minX = DRAG_KEEP_VISIBLE - r.width - left;
+    const maxX = window.innerWidth - DRAG_KEEP_VISIBLE - left;
+    const minY = -top;
+    const maxY = window.innerHeight - DRAG_KEEP_HEADER - top;
+    return [
+      Math.min(Math.max(nx, minX), maxX),
+      Math.min(Math.max(ny, minY), maxY)
+    ];
+  }
+
+  const move = (nx, ny) => { [dx, dy] = clamp(nx, ny); apply(); };
+  const reset = () => { dx = 0; dy = 0; apply(); };
+
+  // 이동·놓기는 window 에서 받는다. 제목 줄에만 걸어 두면 커서가 팝업 밖으로
+  // 조금만 나가도 드래그가 끊긴다(setPointerCapture 는 실패할 수 있어 못 믿는다).
+  function onDown(e) {
+    if (e.button != null && e.button !== 0) return;
+    // 닫기 버튼 등에서 시작한 눌림은 드래그로 삼키지 않는다(손잡이는 예외).
+    const btn = e.target.closest && e.target.closest("button");
+    if (btn && btn !== handleBtn) return;
+    dragging = true;
+    sx = e.clientX; sy = e.clientY; bx = dx; by = dy;
+    header.classList.add("is-dragging");
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+    window.addEventListener("pointercancel", onUp);
+    e.preventDefault();
+  }
+
+  function onMove(e) {
+    if (!dragging) return;
+    move(bx + e.clientX - sx, by + e.clientY - sy);
+  }
+
+  function onUp() {
+    if (!dragging) return;
+    dragging = false;
+    header.classList.remove("is-dragging");
+    window.removeEventListener("pointermove", onMove);
+    window.removeEventListener("pointerup", onUp);
+    window.removeEventListener("pointercancel", onUp);
+  }
+
+  const ARROWS = {
+    ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1]
+  };
+  function onHandleKey(e) {
+    if (e.key === "Home") { e.preventDefault(); reset(); return; }
+    const dir = ARROWS[e.key];
+    if (!dir) return;
+    e.preventDefault();
+    const step = e.shiftKey ? 48 : 16;
+    move(dx + dir[0] * step, dy + dir[1] * step);
+  }
+
+  const onResize = () => { if (dx || dy) move(dx, dy); };
+
+  header.addEventListener("pointerdown", onDown);
+  header.addEventListener("dblclick", reset);   // 두 번 누르면 제자리로
+  handleBtn.addEventListener("keydown", onHandleKey);
+  window.addEventListener("resize", onResize);
+
+  return () => {                                 // 팝업이 닫힐 때 정리
+    onUp();
+    if (counted) { counted = false; setMovedCount(-1); }
+    window.removeEventListener("resize", onResize);
+  };
+}
+
 /**
  * 팝업을 연다. ESC · 배경 탭 · 안드로이드 뒤로가기(popstate)로 닫힌다(§6 공통 동작).
  * @param {object} opts
@@ -125,8 +237,18 @@ export function openModal(opts) {
     class: "modal-x", type: "button", "aria-label": "닫기", text: "✕"
   });
 
+  const dragBtn = el("button", {
+    class: "modal-drag", type: "button",
+    title: "제목 줄을 끌면 팝업을 옮길 수 있습니다 (두 번 누르면 제자리로)",
+    "aria-label": "팝업 위치 옮기기. 방향키로 옮기고 Home 키로 제자리에 놓습니다."
+  }, [
+    el("span", { class: "modal-drag-grip", "aria-hidden": "true", text: "⠿" }),
+    el("span", { class: "modal-drag-text", text: "끌어서 이동" })
+  ]);
+
   const header = el("div", { class: "modal-header" }, [
     el("h2", { class: "modal-title", text: opts.title || "" }),
+    dragBtn,
     closeBtn
   ]);
 
@@ -153,9 +275,12 @@ export function openModal(opts) {
   modalStack.push(entry);
   armHistory();
 
+  const undrag = makeDraggable(panel, header, backdrop, dragBtn);
+
   function destroy() {
     if (closed) return;
     closed = true;
+    undrag();
     document.removeEventListener("keydown", onKey);
     const at = modalStack.indexOf(entry);
     if (at >= 0) modalStack.splice(at, 1);
@@ -192,7 +317,8 @@ export function openModal(opts) {
   });
   document.addEventListener("keydown", onKey);
 
-  const firstField = panel.querySelector("input, textarea, select, button");
+  // 손잡이 버튼은 건너뛴다 — 예전과 같은 자리(✕ 또는 첫 입력칸)에 초점이 가야 한다.
+  const firstField = panel.querySelector("input, textarea, select, button:not(.modal-drag)");
   if (firstField) setTimeout(() => firstField.focus(), 30);
 
   return { close: destroy, panel };

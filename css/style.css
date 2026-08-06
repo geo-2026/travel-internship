@@ -359,9 +359,44 @@ body.modal-open { overflow: hidden; }
 
 .modal-header {
   display: flex; align-items: center; justify-content: space-between;
-  gap: 12px; padding: 14px 16px; border-bottom: 1px solid var(--line);
+  gap: 8px; padding: 14px 16px; border-bottom: 1px solid var(--line);
+  cursor: grab;               /* 제목 줄을 잡고 끌면 팝업이 움직인다 */
+  touch-action: none;         /* 손가락으로 끌 때 화면이 함께 스크롤되지 않게 */
+  user-select: none;
 }
-.modal-title { margin: 0; font-size: 1.05rem; }
+.modal-header.is-dragging { cursor: grabbing; }
+.modal-title { margin: 0; font-size: 1.05rem; flex: 1; min-width: 0; }
+
+/* 팝업 옮기기 손잡이 — 끌 수 있다는 것을 알리고, 방향키 조작 지점이 된다. */
+.modal-drag {
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  min-width: var(--tap); min-height: var(--tap); padding: 0 10px;
+  border: 1px solid var(--line); border-radius: 999px;
+  background: var(--surface); color: var(--ink-soft);
+  font: inherit; font-size: .78rem; cursor: grab; white-space: nowrap;
+}
+.modal-drag:hover { background: #f1f5f9; color: var(--ink); }
+.modal-drag-grip { font-size: 1rem; line-height: 1; }
+@media (max-width: 400px) {
+  .modal-drag-text { display: none; }   /* 좁은 화면에서는 손잡이 모양만 */
+}
+
+/* 한 번이라도 옮기면 어두운 막을 걷어 낸다 — 옆의 지도를 보고 만지기 위해서.
+   배경이 클릭을 받지 않으므로 "배경 탭 = 닫기" 는 이때만 동작하지 않는다. */
+.modal-backdrop.is-moved { background: transparent; pointer-events: none; }
+
+/* 팝업을 옮긴 동안에는 뒤쪽에서 **지도만** 만질 수 있게 한다.
+   팝업이 열려 있는데 [다음]·[+ 숙소] 가 눌려 화면이 바뀌는 것을 막는다. */
+body.modal-moved .app-header,
+body.modal-moved .app-nav,
+body.modal-moved .app-footer,
+body.modal-moved main { pointer-events: none; }
+body.modal-moved .map-wrap { pointer-events: auto; }
+.modal-backdrop.is-moved .modal-panel {
+  pointer-events: auto;
+  border: 1px solid var(--line-strong); border-radius: 16px;
+  box-shadow: 0 10px 40px rgba(15, 23, 42, .3);
+}
 .modal-x {
   min-width: var(--tap); min-height: var(--tap);
   border: 0; background: none; font-size: 1.1rem; cursor: pointer; color: var(--ink-soft);
@@ -381,6 +416,32 @@ body.modal-open { overflow: hidden; }
 
 .search-block { display: flex; flex-direction: column; gap: 8px; }
 .search-guide { margin: 0; font-size: .8rem; color: var(--ink-mute); }
+
+/* 현지어 검색 안내 — 해외 장소는 한글 음차로 거의 안 잡혀서 눈에 띄게 둔다. */
+.search-tip {
+  padding: 10px 12px;
+  border: 1px solid #fcd34d; border-left: 4px solid #f59e0b;
+  border-radius: 10px; background: #fffbeb;
+}
+.search-tip-head {
+  display: flex; align-items: flex-start; gap: 6px;
+  margin: 0; font-size: .86rem; font-weight: 600; color: #78350f;
+}
+.search-tip-head strong { color: #92400e; text-decoration: underline; }
+.search-tip-icon { flex: none; }
+.search-tip-list {
+  display: flex; flex-wrap: wrap; gap: 6px 12px;
+  margin: 8px 0 0; padding: 0; list-style: none;
+}
+.search-tip-item {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-size: .82rem; color: #78350f;
+}
+.search-tip-arrow { color: #b45309; }
+.search-tip-local {
+  padding: 1px 6px; border-radius: 6px;
+  background: #fef3c7; font-weight: 700; color: #7c2d12;
+}
 .search-status { margin: 0; min-height: 1.2em; font-size: .82rem; color: var(--ink-soft); }
 .search-results { display: flex; flex-direction: column; gap: 6px; }
 .search-result {

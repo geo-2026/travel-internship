@@ -130,7 +130,35 @@ function buildSearchBlock(type, placeholder, onPick) {
 
   return el("div", { class: "search-block" }, [
     el("p", { class: "search-guide", text: "방문지의 명칭 또는 상호명을 입력하면 지도에 위치가 표시됩니다" }),
+    buildSearchTip(),
     input, status, results, manualBtn
+  ]);
+}
+
+// 해외 장소는 한글 음차가 검색 색인에 없어 거의 잡히지 않는다(PROGRESS.md 3장).
+// 학생이 검색창 앞에서 먼저 읽도록 눈에 띄게 띄워 둔다.
+const SEARCH_TIP_EXAMPLES = [
+  ["에펠탑", "La Tour Eiffel"],
+  ["오도리공원", "大通公園"]
+];
+
+function buildSearchTip() {
+  return el("div", { class: "search-tip", role: "note" }, [
+    el("p", { class: "search-tip-head" }, [
+      el("span", { class: "search-tip-icon", "aria-hidden": "true", text: "💡" }),
+      el("span", {}, [
+        "인터넷 검색 후 ",
+        el("strong", { text: "현지어로 입력" }),
+        "하면 검색이 더 잘 됩니다."
+      ])
+    ]),
+    el("ul", { class: "search-tip-list" }, SEARCH_TIP_EXAMPLES.map(([ko, local]) =>
+      el("li", { class: "search-tip-item" }, [
+        el("span", { class: "search-tip-ko", text: ko }),
+        el("span", { class: "search-tip-arrow", text: "→" }),
+        el("span", { class: "search-tip-local", text: local })
+      ])
+    ))
   ]);
 }
 
@@ -246,6 +274,21 @@ const PRICE_LABEL = {
   stay: "2인 기준 숙박료(원)", sight: "이용 가격(원)",
   food: "음식 가격(원)", activity: "액티비티 가격(원)"
 };
+// 항목명은 **한글로** 적게 한다 — 지도 검색은 현지어로 하더라도, 카드·PDF 에
+// 남는 이름은 학생이 읽을 수 있어야 하기 때문이다.
+const NAME_PLACEHOLDER = {
+  stay: "숙소명을(를) 한글로 입력하세요  예시) 파리관광호텔, 도쿄 리조트",
+  sight: "관광지명을(를) 한글로 입력하세요  예시) 오도리 공원, 시부야 거리",
+  food: "현지 맛집명을(를) 한글로 입력하세요  예시) 규카츠 모토무라 시부야점, 우나기도코로 아오이",
+  activity: "엑티비티명을(를) 한글로 입력하세요  예시) 도쿄 카트 레이싱 체험"
+};
+// 자리표시자는 입력을 시작하면 사라지므로, 예시는 칸 아래에도 남겨 둔다.
+const NAME_HINT = {
+  stay: "한글로 입력 · 예시) 파리관광호텔, 도쿄 리조트",
+  sight: "한글로 입력 · 예시) 오도리 공원, 시부야 거리",
+  food: "한글로 입력 · 예시) 규카츠 모토무라 시부야점, 우나기도코로 아오이",
+  activity: "한글로 입력 · 예시) 도쿄 카트 레이싱 체험"
+};
 const SEARCH_PLACEHOLDER = {
   stay: "예) 호텔 몬터레이 오사카",
   sight: "예) 오사카성",
@@ -278,7 +321,7 @@ export function openPlacePopup(type, existing, onDone) {
   let dirty = false;
   const markDirty = () => { dirty = true; };
 
-  const nameInput = textInput(draft.name, `${NAME_LABEL[type]}을(를) 입력하세요`, 40);
+  const nameInput = textInput(draft.name, NAME_PLACEHOLDER[type], 40);
   nameInput.addEventListener("input", () => { markDirty(); picker.repaint(); });
 
   const priceInput = textInput(existing ? formatKRW(existing.priceKRW) : "", "0", 12);
@@ -333,7 +376,7 @@ export function openPlacePopup(type, existing, onDone) {
   const body = el("div", { class: "place-form" }, [
     searchBlock,
     locationNote,
-    field(NAME_LABEL[type], nameInput),
+    field(NAME_LABEL[type], nameInput, NAME_HINT[type]),
     picker.node,
     field(PRICE_LABEL[type], priceInput, "숫자만 입력하면 자동으로 콤마가 붙습니다."),
     ...detailNodes
