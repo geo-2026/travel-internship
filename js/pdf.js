@@ -334,7 +334,7 @@ export async function generatePdf(state, routeState) {
 
   // 화면 팝업과 같은 순서로 찍는다 — 학생이 입력한 차례대로 읽히도록.
   const DETAIL_ORDER = {
-    stay: [["roomName", "객실명"], ["note", "숙소 소개"]],
+    stay: [["note", "숙소 소개"]],
     sight: [["highlights", "주요 볼거리"], ["access", "이동 방법"], ["note", "관광지 소개"]],
     food: [["food1", "주요 음식 1"], ["food2", "주요 음식 2"], ["access", "이동 방법"], ["note", "맛집 소개"]],
     activity: [["venue", "이용 장소"], ["access", "이동 방법"], ["note", "액티비티 소개"]]

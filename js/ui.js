@@ -41,6 +41,67 @@ export function toast(message, ms = 2600) {
 
 // ── 모달 ───────────────────────────────────────────────────────────────────
 
+// 안드로이드 뒤로가기로 팝업을 닫을 수 있도록 history 항목을 하나 넣어 둔다.
+//
+// ⚠ 예전에는 팝업마다 pushState 와 history.back() 을 짝지어 불렀다. 그런데
+//    history.back() 은 **비동기**라서, 팝업을 닫자마자 다른 팝업을 열면
+//    뒤늦게 도착한 popstate 가 방금 연 팝업을 즉시 닫아 버렸다.
+//    (증상: "팝업이 저절로 닫힌다 / 이상하게 동작한다")
+//
+//    그래서 history 항목은 **팝업이 하나라도 열려 있는 동안 딱 하나만** 두고,
+//    우리가 직접 부른 back() 이 만들어 낸 popstate 는 selfBack 으로 세어 무시한다.
+//
+// ⚠⚠ 그리고 더 고약한 것: 크롬은 **뒤로가기 이동이 대기 중일 때 들어온
+//    pushState 를 그냥 버린다.** 그래서 "팝업을 닫자마자 다른 팝업 열기" 를 하면
+//    새 팝업은 자기 history 항목이 있다고 착각한 채 열리고, 닫을 때 부른
+//    history.back() 이 **앱 자체를 빠져나가** 학생이 빈 페이지로 튕겨 나갔다.
+//    (실측: pushState len=3 → 항목이 늘지 않음 → 닫을 때 back() 이 앱 밖으로)
+//
+//    그래서 아래 두 곳에서 매번 "지금 정말 우리 항목 위에 서 있는지"를 확인한다.
+//      · disarm 할 때  — 우리 항목이 아니면 back() 을 아예 부르지 않는다.
+//      · pop 을 삼킬 때 — 팝업이 남아 있는데 항목이 사라졌으면 다시 넣는다.
+const MODAL_STATE = "tiModal";
+const modalStack = [];
+let selfBack = 0;
+let popstateBound = false;
+
+/** 지금 브라우저가 서 있는 history 항목이 우리가 넣은 것인지. */
+function onModalEntry() {
+  return Boolean(history.state && history.state[MODAL_STATE]);
+}
+
+function bindPopstate() {
+  if (popstateBound) return;
+  popstateBound = true;
+  window.addEventListener("popstate", () => {
+    if (selfBack > 0) {
+      selfBack--;                                  // 우리가 부른 back() — 무시
+      // 팝업이 아직 남아 있는데 항목이 사라졌다면(위 크롬 동작) 다시 넣어 준다.
+      if (modalStack.length && !onModalEntry()) armHistory();
+      return;
+    }
+    const top = modalStack[modalStack.length - 1];  // 브라우저 뒤로가기 = 팝업 닫기
+    if (top) top.closeFromBack();
+  });
+}
+
+function armHistory() {
+  bindPopstate();
+  if (onModalEntry()) return;                       // 이미 우리 항목 위에 있다
+  history.pushState({ [MODAL_STATE]: true }, "");
+}
+
+function disarmHistory() {
+  if (!onModalEntry()) return;   // 우리 항목이 아니면 back() 은 앱을 빠져나간다
+  selfBack++;
+  history.back();
+}
+
+/** 지도에서 위치를 고르는 동안처럼, 팝업이 열려 있어도 배경을 만져야 할 때. */
+export function setBackdropScrollLock(on) {
+  document.body.classList.toggle("modal-open", Boolean(on));
+}
+
 /**
  * 팝업을 연다. ESC · 배경 탭 · 안드로이드 뒤로가기(popstate)로 닫힌다(§6 공통 동작).
  * @param {object} opts
@@ -53,7 +114,6 @@ export function toast(message, ms = 2600) {
  */
 export function openModal(opts) {
   const root = modalRoot();
-  const historyPushed = { value: false };
 
   const backdrop = el("div", { class: "modal-backdrop", role: "presentation" });
   const panel = el("div", {
@@ -89,19 +149,20 @@ export function openModal(opts) {
   openCount++;
 
   let closed = false;
+  const entry = { closeFromBack: () => destroy() };
+  modalStack.push(entry);
+  armHistory();
 
   function destroy() {
     if (closed) return;
     closed = true;
     document.removeEventListener("keydown", onKey);
-    window.removeEventListener("popstate", onPop);
+    const at = modalStack.indexOf(entry);
+    if (at >= 0) modalStack.splice(at, 1);
     backdrop.remove();
     openCount = Math.max(0, openCount - 1);
     if (openCount === 0) document.body.classList.remove("modal-open");
-    if (historyPushed.value) {
-      historyPushed.value = false;
-      history.back();          // 우리가 넣은 항목을 되돌린다
-    }
+    if (!modalStack.length) disarmHistory();
     if (opts.onClose) opts.onClose();
   }
 
@@ -112,31 +173,15 @@ export function openModal(opts) {
     destroy();
   }
 
+  // 적용은 dirty 확인 없이 바로 닫는다. onApply 가 false 를 돌려주면 열어 둔다.
   async function apply() {
     if (!opts.onApply) return destroy();
     const ok = await opts.onApply();
-    if (ok !== false) {
-      if (historyPushed.value) {
-        // 적용 시에는 dirty 확인 없이 바로 닫는다
-        historyPushed.value = false;
-        history.back();
-      }
-      closed = true;
-      document.removeEventListener("keydown", onKey);
-      window.removeEventListener("popstate", onPop);
-      backdrop.remove();
-      openCount = Math.max(0, openCount - 1);
-      if (openCount === 0) document.body.classList.remove("modal-open");
-      if (opts.onClose) opts.onClose();
-    }
+    if (ok !== false) destroy();
   }
 
   function onKey(e) {
     if (e.key === "Escape") { e.stopPropagation(); requestClose(); }
-  }
-  function onPop() {
-    historyPushed.value = false;   // 이미 뒤로가기가 소비됨
-    destroy();
   }
 
   closeBtn.addEventListener("click", requestClose);
@@ -146,10 +191,6 @@ export function openModal(opts) {
     if (e.target === backdrop) requestClose();
   });
   document.addEventListener("keydown", onKey);
-
-  history.pushState({ modal: true }, "");
-  historyPushed.value = true;
-  window.addEventListener("popstate", onPop);
 
   const firstField = panel.querySelector("input, textarea, select, button");
   if (firstField) setTimeout(() => firstField.focus(), 30);

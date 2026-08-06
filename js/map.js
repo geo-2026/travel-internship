@@ -24,6 +24,16 @@ const registeredImages = new Set();
 let onPlaceClick = null;      // (placeId) => void
 let onLongPress = null;       // ([lon,lat]) => void
 let longPressEnabled = false;
+let onMapError = null;        // (kind) => void — 화면에 안내를 띄우기 위한 콜백
+let errorReported = null;     // 같은 원인을 반복해서 알리지 않기 위한 표시
+
+/**
+ * 지도 오류를 화면에 알릴 콜백을 등록한다.
+ * 타일이 403 으로 막히면 지도는 "단색 화면"이 되는데, 이때 아무 안내도 없으면
+ * 원인을 알 수 없다. 실제로 배포본에서 이 상태가 발생했다(README 「지도가
+ * 단색으로만 보일 때」 참고).
+ */
+export function setErrorHandler(fn) { onMapError = fn; }
 
 export function getMap() {
   return map;
@@ -62,13 +72,13 @@ function loadMapboxGl() {
  */
 export async function ensureMap(container, city) {
   if (map) {
-    attachTo(container);
+    resize();
     return map;
   }
   if (!hasToken()) return null;
 
   const mapboxgl = await loadMapboxGl();
-  if (map) { attachTo(container); return map; }   // 동시 호출 방어
+  if (map) { resize(); return map; }   // 동시 호출 방어
 
   mapboxgl.accessToken = CONFIG.MAPBOX_TOKEN;
   map = new mapboxgl.Map({
@@ -89,8 +99,34 @@ export async function ensureMap(container, city) {
     readyWaiters.splice(0).forEach((fn) => fn(map));
   });
 
+  installErrorReporting();
   installInteractions();
   return map;
+}
+
+/**
+ * 지도 타일이 403 으로 막히면 mapbox-gl 은 콘솔에만 "Forbidden" 을 남기고
+ * 화면에는 배경색만 남긴다. 학생 눈에는 그냥 고장 난 앱으로 보이므로
+ * 원인과 조치 방법을 화면에 띄운다.
+ */
+function installErrorReporting() {
+  map.on("error", (e) => {
+    const err = (e && e.error) || {};
+    const message = String(err.message || "");
+    const status = Number(err.status) || (/\b403\b|forbidden/i.test(message) ? 403 : 0);
+
+    let kind = null;
+    if (status === 403) kind = "forbidden";
+    else if (status === 401) kind = "unauthorized";
+    else if (status >= 500) kind = "server";
+    else if (/failed to fetch|networkerror/i.test(message)) kind = "offline";
+
+    if (!kind) { console.warn("지도 오류", err); return; }
+    if (errorReported === kind) return;      // 타일마다 반복되므로 한 번만 알린다
+    errorReported = kind;
+    console.error("지도 오류:", kind, message);
+    if (onMapError) onMapError(kind);
+  });
 }
 
 function installSources() {
@@ -194,24 +230,19 @@ function installInteractions() {
   map.on("dragstart", () => { moved = true; cancel(); });
 }
 
-/** 컨테이너를 옮기고 크기를 다시 잰다. 지도를 새로 만들지 않는다. */
-export function attachTo(container) {
-  if (!map || !container) return;
-  const canvasContainer = map.getContainer();
-
-  // 옮길 목적지가 지도 노드 자신이거나 그 안쪽이면 appendChild 가
-  // HierarchyRequestError 를 던진다. 페이지 전환이 겹칠 때 드물게 이 상태가 되는데,
-  // 예외를 밖으로 내보내면 그 뒤의 화면 구성이 통째로 멈춘다.
-  // 다음 전환에서 정상 위치로 돌아오므로 여기서는 이동만 건너뛴다.
-  if (canvasContainer === container || canvasContainer.contains(container)) {
-    console.warn("지도 컨테이너 이동을 건너뜁니다 — 목적지가 지도 안쪽입니다.");
-    requestAnimationFrame(() => map.resize());
-    return;
-  }
-
-  if (canvasContainer.parentElement !== container) {
-    container.appendChild(canvasContainer);
-  }
+/**
+ * 지도 크기를 다시 잰다. 지도를 새로 만들지 않는다.
+ *
+ * 페이지를 옮길 때 지도 노드를 직접 들어 옮기던 예전 방식은 없앴다.
+ * 지도 컨테이너(#map)는 이제 `.map-wrap` 안에 붙박이로 두고, 앱이 옮기는 것은
+ * 바깥의 `.map-wrap` 뿐이다. 그래야
+ *   ① 지도 컨테이너가 항상 비어 있어 mapbox-gl 의 "container should be empty"
+ *      경고(마커 클릭·팝업 상호작용이 나빠진다)가 나지 않고,
+ *   ② 목적지가 지도 안쪽이 되어 appendChild 가 HierarchyRequestError 를
+ *      던지는 상황 자체가 생기지 않는다.
+ */
+export function resize() {
+  if (!map) return;
   requestAnimationFrame(() => map.resize());
 }
 

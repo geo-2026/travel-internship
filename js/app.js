@@ -11,7 +11,8 @@ import { el, toast, formatKRW, escapeHtml, openModal } from "./ui.js";
 
 let cities = [];
 let currentPage = 1;
-let mapHost = null;      // 지도 컨테이너 (앱 전체에서 하나)
+let mapHost = null;      // 지도 컨테이너 (앱 전체에서 하나). 항상 비어 있어야 한다.
+let mapWrap = null;      // 지도 + 범례 + 오류 안내를 감싸는 상자. 페이지 사이를 옮겨 다닌다.
 let routeState = null;   // 마지막 경로 계산 결과
 
 // ── 부팅 ───────────────────────────────────────────────────────────────────
@@ -42,8 +43,12 @@ export async function boot() {
     cities = [];
   }
 
+  // 지도 컨테이너(#map)는 mapbox-gl 이 통째로 쓰므로 **비워 둔다**.
+  // 범례·오류 안내처럼 지도 위에 겹쳐 보여야 하는 것들은 바깥의 .map-wrap 에 넣는다.
   mapHost = el("div", { id: "map", class: "map-host" });
+  mapWrap = el("div", { class: "map-wrap" }, [mapHost]);
   buildLegend();
+  MapView.setErrorHandler(showMapError);
 
   if (!hasToken()) showTokenBanner();
   else if (isLocalPreview() && !RUNTIME.localTokenApplied) showLocalPreviewBanner();
@@ -303,7 +308,7 @@ function renderPage2() {
 
   root.append(
     mapSlot,
-    el("p", { class: "map-hint", text: "지도를 길게 누르면 검색 없이 위치를 직접 지정할 수 있습니다. 한글 라벨이 없는 지역은 현지어로 표시되는 것이 정상입니다." }),
+    el("p", { class: "map-hint", text: "검색으로 찾기 어려운 곳은 팝업 안의 [지도에서 직접 위치 지정하기]를 누른 뒤 지도를 길게 누르면 됩니다. 한글 라벨이 없는 지역은 현지어로 표시되는 것이 정상입니다." }),
     toolbar,
     cardList
   );
@@ -312,7 +317,7 @@ function renderPage2() {
 async function enterPage2() {
   const state = Store.getState();
   const slot = document.getElementById("map-slot-2");
-  slot.appendChild(mapHost);
+  slot.appendChild(mapWrap);          // 지도 노드가 아니라 바깥 상자만 옮긴다
   paintToolbar();
   paintCards();
 
@@ -323,7 +328,7 @@ async function enterPage2() {
     toast("지도를 불러오지 못했습니다. 네트워크를 확인해 주세요.");
     return;
   }
-  MapView.attachTo(slot);
+  MapView.resize();
   MapView.setPlaceClickHandler(handleMarkerClick);
   await MapView.whenReady();
   await MapView.renderPlaces(state.places, false);
@@ -484,7 +489,54 @@ function buildLegend() {
     toggle.textContent = open ? "범례 ▸" : "범례 ▾";
   });
   legend.append(toggle, body);
-  mapHost.appendChild(legend);
+  mapWrap.appendChild(legend);
+}
+
+// ── 지도 오류 안내 ─────────────────────────────────────────────────────────
+
+/**
+ * 지도가 단색으로만 보일 때 원인을 화면에 알린다.
+ *
+ * 실제로 겪은 사고: 배포용 토큰의 URL 제한을 경로까지(`…/travel-internship/`)
+ * 걸어 두면 타일만 403 이 된다. 타일은 웹 워커가 받아 오는데 워커 요청의
+ * Referer 에는 경로가 빠진 출처만 실리기 때문이다. 스타일·검색·경로는 메인
+ * 스레드라 200 이 떠서, 겉으로는 "지도만 안 나오는" 상태가 된다.
+ */
+function showMapError(kind) {
+  const MESSAGES = {
+    forbidden: {
+      head: "지도 타일을 불러올 수 없습니다 (403).",
+      body: "Mapbox 토큰의 URL 제한이 경로까지 걸려 있으면 지도 타일만 막힙니다. " +
+            "Mapbox 대시보드에서 제한을 도메인만(예: geo-2026.github.io) 으로 바꿔 주세요. " +
+            "하위 경로는 자동으로 허용됩니다."
+    },
+    unauthorized: {
+      head: "지도 토큰이 올바르지 않습니다 (401).",
+      body: "config.js 의 MAPBOX_TOKEN 값을 확인해 주세요."
+    },
+    server: {
+      head: "Mapbox 서버가 일시적으로 응답하지 않습니다.",
+      body: "잠시 뒤 새로고침해 주세요. 입력한 내용은 이 기기에 그대로 남아 있습니다."
+    },
+    offline: {
+      head: "네트워크에 연결되어 있지 않습니다.",
+      body: "지도와 검색만 잠시 멈춥니다. 입력한 내용은 이 기기에 그대로 남아 있습니다."
+    }
+  };
+  const msg = MESSAGES[kind] || MESSAGES.server;
+
+  const existing = mapWrap.querySelector(".map-error");
+  if (existing) existing.remove();
+
+  const box = el("div", { class: "map-error", role: "alert" }, [
+    el("strong", { text: msg.head }),
+    el("span", { text: msg.body }),
+    el("button", {
+      class: "btn btn-ghost btn-sm", type: "button", text: "닫기",
+      onclick: () => box.remove()
+    })
+  ]);
+  mapWrap.appendChild(box);
 }
 
 // ── 3페이지 ────────────────────────────────────────────────────────────────
@@ -511,7 +563,7 @@ function renderPage3() {
 async function enterPage3() {
   const state = Store.getState();
   const slot = document.getElementById("map-slot-3");
-  slot.appendChild(mapHost);
+  slot.appendChild(mapWrap);          // 지도 노드가 아니라 바깥 상자만 옮긴다
   paintOrderList();
   paintSummary();
   recomputeRoute(0);
@@ -522,7 +574,7 @@ async function enterPage3() {
     console.error(err);
     return;
   }
-  MapView.attachTo(slot);
+  MapView.resize();
   MapView.setLongPressEnabled(false);
   await MapView.whenReady();
   await MapView.renderPlaces(state.places, true);

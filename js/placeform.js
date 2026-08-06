@@ -8,7 +8,7 @@ import { geocode, debounce, RateLimitError, MIN_QUERY_LENGTH } from "./search.js
 import * as MapView from "./map.js";
 import {
   el, openModal, toast, field, textInput, textArea,
-  bindMoneyInput, formatKRW, parseKRW
+  bindMoneyInput, formatKRW, parseKRW, setBackdropScrollLock
 } from "./ui.js";
 
 const SHADES = [["light", "연하게"], ["base", "기본"], ["dark", "진하게"]];
@@ -21,6 +21,12 @@ function pickOnMap(type) {
     const backdrop = document.querySelector(".modal-backdrop:last-of-type");
     if (backdrop) backdrop.classList.add("is-hidden");
 
+    // 팝업이 열려 있는 동안에는 body 스크롤이 잠겨 있다. 그대로 두면 지도가
+    // 화면 밖에 있을 때 스크롤이 되지 않아 위치를 지정할 수 없다.
+    setBackdropScrollLock(false);
+    const mapSlot = document.querySelector(".page.is-active .map-slot");
+    if (mapSlot) mapSlot.scrollIntoView({ block: "center", behavior: "smooth" });
+
     const banner = el("div", { class: "map-pick-banner" }, [
       el("span", { text: "지도를 길게 눌러(약 0.6초) 위치를 지정하세요." }),
       el("button", { class: "btn btn-ghost btn-sm", type: "button", text: "취소" })
@@ -31,6 +37,7 @@ function pickOnMap(type) {
       MapView.setLongPressEnabled(false);
       MapView.setLongPressHandler(null);
       banner.remove();
+      setBackdropScrollLock(true);
       if (backdrop) backdrop.classList.remove("is-hidden");
       resolve(coord);
     };
@@ -212,7 +219,6 @@ function buildIconPicker(type, draft, onChange) {
 
 const DETAIL_FIELDS = {
   stay: [
-    { key: "roomName", label: "객실명", kind: "text", max: 40, placeholder: "예) 트윈룸" },
     { key: "note", label: "숙소 소개 설명 (장점·주의점)", kind: "textarea", max: 300 }
   ],
   sight: [
@@ -237,7 +243,8 @@ const NAME_LABEL = {
   stay: "숙소명", sight: "관광지명", food: "현지 맛집명", activity: "엑티비티명"
 };
 const PRICE_LABEL = {
-  stay: "숙박료(원)", sight: "이용 가격(원)", food: "음식 가격(원)", activity: "액티비티 가격(원)"
+  stay: "2인 기준 숙박료(원)", sight: "이용 가격(원)",
+  food: "음식 가격(원)", activity: "액티비티 가격(원)"
 };
 const SEARCH_PLACEHOLDER = {
   stay: "예) 호텔 몬터레이 오사카",
@@ -306,10 +313,11 @@ export function openPlacePopup(type, existing, onDone) {
     draft.source = picked.source;
     markDirty();
     // 항목명 자동 입력 — 학생이 지우고 고쳐 쓸 수 있다.
+    // 엑티비티만은 「엑티비티명」(예: 래프팅)과 「이용 장소」(예: 한탄강)가 다르므로
+    // 검색한 장소명은 **이용 장소**에만 채운다.
     if (picked.name) {
       if (type === "activity") {
         if (!detailInputs.venue.value) detailInputs.venue.value = picked.name;
-        if (!nameInput.value) nameInput.value = picked.name;
       } else if (!nameInput.value) {
         nameInput.value = picked.name;
       }
